@@ -1,6 +1,6 @@
 ---
-rev: 9
-last_merged_stm: 9
+rev: 10
+last_merged_stm: 10
 ---
 # Long-term Memory
 
@@ -40,6 +40,10 @@ last_merged_stm: 9
 | D-27 | scope 처리: http 검사, websocket 은 accept 없이 close 1008(JSON 에러 포맷의 유일한 예외), lifespan 통과, 기타 무시 | 기본 거부 | - | (STM-0009, ADR-011 §10) |
 | D-28 | SSE `/api/v1/events` 는 GET 만(HEAD 포함 나머지 405 `Allow: GET`, Starlette 자동 HEAD 를 backend 가 막아야 함). 출처 검사는 **경로 기준**(메서드 무관)으로 라우팅·슬롯 획득 전: Origin 불일치/null, 또는 `Sec-Fetch-Site` 가 strip·소문자 정확 일치로 `same-origin`/`none` 이 아니면 403. `Origin`·`Sec-Fetch-Site` 복수 헤더 403. 400·403·405 는 슬롯 미소모. 다른 GET 에는 출처 검사 미적용(SOP·읽기 전용) | SSE 슬롯 소모(가용성) 방지, security 재리뷰 PASS | GET 만 검사(HEAD 우회) | (STM-0009, ADR-011 §11) |
 | D-29 | 처리 순서: scope → Host 400 → 출처·미디어 타입 403 → 라우팅 404/405 → 검증 422 → 핸들러. events 경로는 400 → 403 → 405 → 503 → 스트림 | 정보 노출 최소 | - | (STM-0009, ADR-011 §12) |
+| D-30 | 가드 체인은 `add_middleware` 가 아니라 FastAPI 서브클래스 `MonitorApp.__call__` 에서 감싼다: HostGuard → OriginGuard → SecurityHeaders → ErrorShield (ServerErrorMiddleware·FastAPI 0.161 텔레메트리보다 바깥) | ADR-011 §4 "가장 바깥" 의도 | add_middleware | (STM-0010) |
+| D-31 | 정적 dist 는 `app.router.default` + `redirect_slashes=False`: `/api`·`/api/...` 는 메서드 무관 404, 그 밖은 파일 있으면 GET/HEAD 서빙·다른 메서드 405 `Allow: GET, HEAD`, 없으면 404(SPA 폴백 없음), dist 없으면 `/` 만 안내 HTML. 세그먼트 `.`/`..`/숨김/`\`/NUL/`:` 거부 + `resolve(strict=True)` 후 dist 하위 확인 | 405 가로채기 회피, 경로 이탈 차단 | `Mount("/")`, StaticFiles(html=True) | (STM-0010) |
+| D-32 | 기본 포트 8765, 변경은 `AIDLC_MONITOR_PORT` 또는 `python -m app --port N`(우선)만. 선행 0·0·범위 밖 거부, 바인딩 `127.0.0.1` 상수(호스트 옵션 없음) | ADR-001, D-19 | - | (STM-0010) |
+| D-33 | 패널 규칙: `meta.warnings` 가 하나라도 있으면 `partial`, 파일 없음 = 값 `null` + 경고, 판정 파일 깨짐 = 해당 값만 `null`/`unknown`. `## Blocked` 는 줄의 첫 T-ID 만 막힘. FR-001 단계 1 의 "00 미작성 0개" 는 project Gate 출력 줄을 쓴다(플레이스홀더 규칙 단일 출처) | FR-001~003 AC | - | (STM-0010) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -66,6 +70,14 @@ last_merged_stm: 9
 - 보안 점검은 케이스 표(케이스 id, 요청, 대상, 기대 상태/코드) + 코드 점검 grep(TrustedHostMiddleware 0건, `startswith`/`in` 비교 금지, 415 경로 없음)으로 써서 구현 Task 가 그대로 테스트로 옮기게 한다 (STM-0008)
 - 중복 Host(H-18)는 httpx TestClient 로 보내기 어려우므로 ASGI scope 를 직접 만들어 테스트한다 (STM-0008)
 - Starlette 는 경로+메서드 일치를 경로만 일치보다 우선한다 → `Mount("/")`·`/api` 캐치올이 405 를 가로챌 수 있으니 정적 서빙은 어떤 라우트에도 안 맞을 때로 둔다 (STM-0009)
+- Hook 모듈 importlib 로드는 바이트코드를 쓰지 않는 로더로 — 기본 `SourceFileLoader` 는 대상 저장소에 `__pycache__` 를 만든다(읽기 전용 위반). 해시 불변 테스트에 `__pycache__` 0개 단언, Gate 서브프로세스에 `PYTHONDONTWRITEBYTECODE=1` (STM-0010)
+- `aidlc.py check` 는 스크립트 위치를 루트로 쓰므로 fixture 루트에 aidlc 스크립트·Hook·templates 를 복사해야 fixture 를 본다 (STM-0010)
+- Host 0개·2개·빈 Host 는 httpx 로 못 만든다 → 원시 ASGI scope(`backend_support.asgi_http`)로 테스트 (STM-0010)
+- 아직 없는 대상 라우트는 대역(stub) 라우트를 뒤에 붙여 "가드 통과 → 핸들러 도달" 을 검증, 실제 라우트가 생기면 대역은 가려진다 (STM-0010)
+- FastAPI 0.161 의 `app.routes` 는 포함 라우터를 `_IncludedRouter` 로 감싸 path 가 없다 → 라우트 존재 확인은 요청으로 (STM-0010)
+- ruff 0.17.2 기본 규칙 B008·SIM117·PLW1510·TRY004·UP012 → `Annotated[..., Depends()]`, `check=False` 명시 (STM-0010)
+- 변이(mutation) 검증: 스크래치 사본에 결함을 넣어 테스트가 실제로 잡는지 확인 — T-005 에서 6/6 검출 (STM-0010, qa 리뷰)
+- uvicorn(h11)은 중복 Host 를 앱 전에 평문 400 으로 거부, absolute-form 요청은 `scope.path` 에 `http://...` 가 그대로 들어와 정적 처리기 `:` 세그먼트 거부로 404 (STM-0010, security 리뷰)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -90,7 +102,11 @@ last_merged_stm: 9
 | I-18 | PO 미답 질문: Q-P1(단계 3 에 `.claude/agents` 요구?), Q-P2(docs Gate 빈 대상), Q-P3(run.bat 실패 시 창 유지), Q-P4(R-01 실패 시 후퇴안은 01 §10 과 다름 → PO 결정) | 수용 기준 | 열림 → 사용자에게 질문 | (STM-0006) |
 | I-19 | home_guard 빈틈: 인자 없는 `os.listdir()` 통과(None 인자), 경로 판정 중 OSError 시 통과, 원래 `XDG_CONFIG_HOME/claude` 미등록. 가드 밖: 정수 fd·`dir_fd`·`os.stat`/`os.readlink`·서브프로세스 서버 — test-strategy 에 미기재 | 테스트 격리 | 열림 → T-013 (비차단) | (STM-0007) |
 | I-20 | 출처 가드의 경로 비교 기준(디코드된 `scope["path"]` vs `raw_path`, 끝 슬래시) 미정 → `/api/v1/%65vents` 등으로 우회 가능성 | SSE 가용성 | 열림 → T-011 (가드는 라우터와 같은 디코드 path 로 비교 + 우회 경로 슬롯 카운트 테스트) | (STM-0009) |
-| I-21 | Starlette 자동 HEAD·405 가로채기 동작은 이 환경에 FastAPI 가 없어 실행 미확인 | 계약 준수 | 열림 → T-005·T-011 테스트로 고정 | (STM-0009) |
+| ~~I-21~~ | Starlette 자동 HEAD·405 가로채기 동작은 이 환경에 FastAPI 가 없어 실행 미확인 | 계약 준수 | 열림 → T-005·T-011 테스트로 고정 | (STM-0009) → **해소** (STM-0010: FastAPI 0.161.1 `APIRoute(GET)` 는 HEAD 미추가 → 405 실측, 순수 Starlette `Route` 는 HEAD 추가 → T-011 은 APIRoute) |
+| I-22 | fastapi 0.161.1 전이 의존성 `opentelemetry-api`(Apache-2.0)·`annotated-doc`(MIT) 가 ADR-006 에 없음, TestClient httpx → httpx2 폐기 예고. 텔레메트리는 SDK·exporter 없고 auto_configure 기본 False 라 외부 전송 없음 | 의존성 기록 | 열림 → T-007(httpx 결정)·T-009(ADR-006 기록) | (STM-0010) |
+| I-23 | ADR 문구가 구현과 다름: ADR-009 "import 부작용 없음"(실제 기본 로더는 .pyc 씀), ADR-011 §4 미들웨어 방식(실제 `__call__`), §9 정적 서빙(실제 router.default), 20 §4 디렉터리 트리·StaticFiles 문구 | 문서 정합성 | 열림 → T-009 | (STM-0010) |
+| I-24 | 소소한 하드닝: `server: uvicorn` 헤더 노출(`server_header=False`), FastAPI 텔레메트리를 `telemetry=` 로 명시 비활성 + 테스트로 고정(사용자 `OTEL_*` 환경 영향 차단), 가짜 Hook 쓰기 함수 테스트가 `kind=="full"` 에만 error 금지 단언, `asgi_http` receive 의 `sleep(3600)` 무한 대기 | 하드닝·테스트 신뢰성 | 열림 → T-008 | (STM-0010) |
+| I-25 | privacy.md §5.2 C-01~C-03·H-01~H-03 POST "통과" 기대값이 대역 핸들러 200 기준 — 실제 `/control/pause` 는 활성 루프 없으면 409 → 기대값을 "400/403/422 아님" 으로 | 테스트 정합성 | 열림 → T-008 | (STM-0010) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -125,6 +141,7 @@ last_merged_stm: 9
 
 ### backend
 - (아직 없음)
+- API 앱 셸 23 모듈, 테스트 426건(unit 8·api 11 파일), 커버리지 98%. 실행: `cd monitor/backend && ../.venv/bin/python -m pytest --cov=app -q -p no:cacheprovider`, 서버: `AIDLC_MONITOR_PORT=<port> ../.venv/bin/python -m app` (STM-0010)
 
 ### frontend
 - (아직 없음)
@@ -143,6 +160,8 @@ last_merged_stm: 9
 - 중단 후 커밋된 반쪽 변경은 실패 원인이 사소한 경우가 많다 — 갈아엎기 전에 먼저 실행해 원인을 확인한다 (STM-0007)
 - ADR 이 확정되면 그 ADR 을 인용하는 체크리스트의 "선택"/"후보" 문구를 같은 Phase 안에 정리한다 (STM-0008)
 - 한정 자원(연결 슬롯)을 잡는 경로의 보안 검사는 메서드가 아니라 경로로 건다 — 프레임워크가 자동으로 붙이는 메서드(HEAD)로 우회되지 않게 (STM-0009)
+- "읽기 전용" 은 파일 열기 모드만이 아니라 import 부수 효과(.pyc)까지 본다 — 임시 디렉터리 실측으로 잡았다 (STM-0010)
+- 프레임워크가 문서 작성 시점보다 새로우면 소스를 직접 읽고 테스트로 고정한다 — LTM 의 Starlette 함정 설명과 FastAPI 0.161 실제 동작이 달랐다 (STM-0010)
 
 ## 6. 용어집 (Glossary)
 | 용어 | 정의 |
