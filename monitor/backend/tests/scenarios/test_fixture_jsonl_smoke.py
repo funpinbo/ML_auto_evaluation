@@ -192,6 +192,13 @@ def test_symlink_escape_cases(claude_home, symlink_escape):
         symlink_escape.dir_link.resolve().parent != claude_home.projects_dir.resolve()
     )
     assert not symlink_escape.subdir_link.resolve().is_relative_to(root)
+    # 상대 링크로 CLAUDE_HOME 안의 decoy 자격 증명을 가리킨다: 홈 안이지만 프로젝트 밖
+    creds = symlink_escape.credentials_link
+    assert creds.is_symlink() and not Path(os.readlink(creds)).is_absolute()
+    assert creds.resolve() == (claude_home.home / ".credentials.json").resolve()
+    assert creds.resolve().is_relative_to(claude_home.home.resolve())
+    assert not creds.resolve().is_relative_to(root)
+    assert markers.CREDENTIAL in creds.read_text(encoding="utf-8")
     # 오라클은 이탈 파일을 건너뛰어, 기대값이 symlink 추가 전과 같아야 한다
     buckets, _ = aggregate(claude_home.project_dir)
     assert buckets == claude_home.manifest.expected_buckets
@@ -202,6 +209,7 @@ def test_no_real_home_is_used(_isolate_home, monkeypatch):
     assert Path.home() == _isolate_home
     assert "pytest" in str(_isolate_home) or "fake_home" in str(_isolate_home)
     assert not (_isolate_home / ".claude").exists()
+    assert "CLAUDE_CONFIG_DIR" not in os.environ
 
 
 def test_app_env_injects_paths(app_env):
@@ -223,7 +231,26 @@ def test_marker_helpers():
     assert markers.find_markers(f"x {markers.BODY} y") == [markers.BODY]
     with pytest.raises(AssertionError) as info:
         markers.assert_no_markers(f"leak {markers.PATH}", where="resp")
-    assert markers.PATH in str(info.value) and "leak" not in str(info.value)
+    message = str(info.value)
+    assert "PATH" in message and markers.PATH not in message and "leak" not in message
+
+
+def test_assert_no_markers_reports_only_labels_and_indices(claude_home):
+    forbidden = claude_home.forbidden_strings()
+    leaked = f"{claude_home.dir_name} {claude_home.project_dir} {markers.BODY}"
+    with pytest.raises(AssertionError) as info:
+        markers.assert_no_markers(leaked, extra=forbidden, where="resp")
+    message = str(info.value)
+    assert "BODY" in message and "DIR_NAME" in message
+    assert "extra[" in message  # dir_name·경로는 인덱스로만
+    for value in forbidden:
+        assert value not in message
+    assert str(claude_home.home) not in message
+
+
+def test_marker_labels_cover_all_markers():
+    assert set(markers.MARKER_LABELS) == set(markers.ALL_MARKERS)
+    assert len(set(markers.MARKER_LABELS.values())) == len(markers.ALL_MARKERS)
 
 
 def test_build_claude_home_rejects_nothing_outside_tmp(tmp_path, full_workspace):

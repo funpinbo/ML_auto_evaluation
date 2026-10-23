@@ -1,8 +1,14 @@
 """공용 pytest fixture (qa 소유, T-003).
 
 원칙
-- 실제 `~/.claude`·홈 디렉터리를 쓰지 않는다. 모든 테스트에서 HOME 을 임시 경로로 바꾸고
-  AIDLC_ROOT / CLAUDE_HOME 을 지워, 테스트가 필요한 값을 명시적으로 주입하게 한다 (CON-06).
+- 실제 `~/.claude`·홈 디렉터리를 쓰지 않는다 (CON-06, I-09). 3겹으로 막는다.
+  1. 세션 시작(`pytest_configure`): HOME/USERPROFILE 을 세션 임시 홈으로 바꾸고 AIDLC_ROOT /
+     CLAUDE_HOME / CLAUDE_CONFIG_DIR / XDG_CONFIG_HOME 을 지운다. session·module 범위 fixture 와
+     수집 시점 import 도 실제 홈을 보지 못한다. 종료(`pytest_unconfigure`) 때 원래 값으로 되돌린다.
+  2. 테스트마다(`_isolate_home`, autouse): 같은 변수를 테스트 전용 임시 홈으로 다시 바꾼다.
+  3. 감사 hook(`fixtures/home_guard.py`): 실제 홈 아래 open/listdir/scandir 를 시스템 호출 전에
+     막고 기록한다. 테스트가 예외를 삼켜도 `_home_guard_check` 가 그 테스트를 실패시킨다.
+     실제 홈은 이 모듈 import 시점(환경 변수를 바꾸기 전)에 환경 변수와 `pwd` 로 기록한다.
 - 경로는 환경 변수로 주입한다: `app_env` 는 AIDLC_ROOT·CLAUDE_HOME 을 설정한다.
 - fixture 생성은 결정적(seed 고정)이다.
 
@@ -13,8 +19,11 @@ sys.path 에 넣으므로 `from fixtures...` 로 가져온다. 테스트 파일 
 
 from __future__ import annotations
 
+import os
+import shutil
 import sys
-from collections.abc import Callable
+import tempfile
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,20 +40,99 @@ from fixtures.claude_home import (
     add_symlink_escapes,
     build_claude_home,
 )
+from fixtures.home_guard import (
+    HomeGuard,
+    default_allowed_roots,
+    detect_real_homes,
+    sensitive_paths,
+)
 from fixtures.jsonl_gen import FIXED_NOW
 from fixtures.runtime_files import write_claude_status
 from fixtures.workspace import WorkspaceInfo, build_workspace
+
+
+# 환경 변수를 바꾸기 전에 기록한다 (import 시점 = 세션 시작 전).
+REPO_ROOT = Path(__file__).resolve().parents[3]
+HOME_VARS = ("HOME", "USERPROFILE")
+CLEARED_VARS = ("AIDLC_ROOT", "CLAUDE_HOME", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME")
+REAL_HOMES = detect_real_homes()
+HOME_GUARD = HomeGuard(REAL_HOMES, sensitive_paths(REAL_HOMES))
+_SAVED_ENV: dict[str, str | None] = {}
+_SESSION_HOME: dict[str, str] = {}
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    for root in default_allowed_roots(REPO_ROOT):
+        HOME_GUARD.allow(root)
+    session_home = tempfile.mkdtemp(prefix="qa-session-home-")
+    _SESSION_HOME["path"] = session_home
+    for var in (*HOME_VARS, *CLEARED_VARS):
+        _SAVED_ENV[var] = os.environ.get(var)
+    for var in HOME_VARS:
+        os.environ[var] = session_home
+    for var in CLEARED_VARS:
+        os.environ.pop(var, None)
+    HOME_GUARD.install()
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """테스트 밖(수집·session fixture 등)에서 생긴 위반도 세션 실패로 만든다."""
+    leftover = HOME_GUARD.take()
+    if leftover:
+        sys.stderr.write(
+            "\n[home-guard] 테스트 밖 실제 홈 접근: "
+            + ", ".join(str(v) for v in leftover)
+            + "\n"
+        )
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    for var, value in _SAVED_ENV.items():
+        if value is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = value
+    _SAVED_ENV.clear()
+    session_home = _SESSION_HOME.pop("path", None)
+    if session_home:
+        shutil.rmtree(session_home, ignore_errors=True)
+
+
+@pytest.fixture(scope="session")
+def home_guard() -> HomeGuard:
+    """감사 hook 가드. 음성 테스트는 `with home_guard.expect() as caught:` 안에서 접근을 시도한다."""
+    return HOME_GUARD
+
+
+@pytest.fixture(scope="session")
+def session_home() -> Path:
+    return Path(_SESSION_HOME["path"])
+
+
+@pytest.fixture(autouse=True)
+def _home_guard_check() -> Iterator[None]:
+    """테스트가 RealHomeAccessError 를 삼켜도 기록된 위반이 있으면 실패시킨다.
+
+    시작 시 비우지 않는다: 수집·앞선 teardown 의 위반도 버리지 않고 이 테스트 실패로 드러낸다.
+    """
+    yield
+    found = HOME_GUARD.take()
+    if found:
+        pytest.fail(
+            "실제 홈 접근 감지: " + ", ".join(str(v) for v in found), pytrace=False
+        )
 
 
 @pytest.fixture(autouse=True)
 def _isolate_home(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
-    """실제 홈을 가리킬 수 있는 환경 변수를 임시 경로로 바꾼다."""
+    """실제 홈을 가리킬 수 있는 환경 변수를 테스트 전용 임시 경로로 바꾼다."""
     fake_home = tmp_path_factory.mktemp("fake_home")
-    for var in ("HOME", "USERPROFILE"):
+    for var in HOME_VARS:
         monkeypatch.setenv(var, str(fake_home))
-    for var in ("AIDLC_ROOT", "CLAUDE_HOME"):
+    for var in CLEARED_VARS:
         monkeypatch.delenv(var, raising=False)
     return fake_home
 

@@ -37,21 +37,57 @@ ALL_MARKERS: tuple[str, ...] = (
     ESCAPE,
 )
 
+# 실패 메시지에는 값 대신 이 라벨을 쓴다 (extra 는 `extra[i]`).
+MARKER_LABELS: dict[str, str] = {
+    BODY: "BODY",
+    TOOL: "TOOL",
+    PATH: "PATH",
+    CWD: "CWD",
+    SESSION: "SESSION",
+    UUID: "UUID",
+    REQUEST_ID: "REQUEST_ID",
+    EXTRA: "EXTRA",
+    DIR_NAME: "DIR_NAME",
+    SETTINGS: "SETTINGS",
+    CREDENTIAL: "CREDENTIAL",
+    ESCAPE: "ESCAPE",
+}
+
 # 허용 필드 밖에서 오는 "사용량처럼 보이는" 숫자. 집계에 섞이면 곧바로 드러난다 (P-03).
 FALSE_POSITIVE_TOKENS = 777_777
 
 
-def find_markers(*texts: str | bytes, extra: tuple[str, ...] = ()) -> list[str]:
-    """주어진 텍스트들에서 발견된 표식(중복 제거, 정의 순서)을 돌려준다."""
-    haystack = "\n".join(
+def _haystack(texts: tuple[str | bytes, ...]) -> str:
+    return "\n".join(
         t.decode("utf-8", "replace") if isinstance(t, bytes) else t for t in texts
     )
-    return [m for m in (*ALL_MARKERS, *extra) if m in haystack]
+
+
+def find_markers(*texts: str | bytes, extra: tuple[str, ...] = ()) -> list[str]:
+    """주어진 텍스트들에서 발견된 표식(중복 제거, 정의 순서)을 돌려준다."""
+    haystack = _haystack(texts)
+    return [m for m in dict.fromkeys((*ALL_MARKERS, *extra)) if m and m in haystack]
+
+
+def find_marker_labels(*texts: str | bytes, extra: tuple[str, ...] = ()) -> list[str]:
+    """발견된 표식의 라벨(`BODY` …, extra 는 `extra[i]`). 값 자체는 돌려주지 않는다."""
+    haystack = _haystack(texts)
+    labels = [MARKER_LABELS[m] for m in ALL_MARKERS if m in haystack]
+    labels += [
+        f"extra[{i}]"
+        for i, value in enumerate(extra)
+        if value and value not in MARKER_LABELS and value in haystack
+    ]
+    return labels
 
 
 def assert_no_markers(
     *texts: str | bytes, extra: tuple[str, ...] = (), where: str = ""
 ) -> None:
-    """표식이 하나라도 있으면 실패한다. 실패 메시지에는 표식 종류만 적고 주변 내용은 적지 않는다."""
-    found = find_markers(*texts, extra=extra)
-    assert not found, f"본문 표식 노출{f' ({where})' if where else ''}: {found}"
+    """표식이 하나라도 있으면 실패한다.
+
+    실패 메시지에는 라벨/인덱스만 적는다. extra 값(경로·dir_name 등)과 주변 내용은 적지 않는다.
+    extra 에 표식이 겹치면(`forbidden_strings()` 처럼) 표식 라벨로만 한 번 센다.
+    """
+    labels = find_marker_labels(*texts, extra=extra)
+    assert not labels, f"본문 표식 노출{f' ({where})' if where else ''}: {labels}"

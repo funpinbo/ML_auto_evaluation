@@ -175,7 +175,8 @@ def write_claude_status(path: Path, kind: str = "normal", **kwargs: object) -> P
 
 
 # transcript_dir_name 재검증 입력 (privacy.md P-26, contracts/README §3)
-VALID_DIR_NAMES = ("-home-user-chatbot", "a", "a.b_c-d", "..a", "a..", "A" * 255)
+# 첫 항목은 합성 경로 `/home/fake/project` 의 인코딩이다(실제 개발 경로를 fixture 에 두지 않는다).
+VALID_DIR_NAMES = ("-home-fake-project", "a", "a.b_c-d", "..a", "a..", "A" * 255)
 INVALID_DIR_NAMES = (
     "..",
     ".",

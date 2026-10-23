@@ -92,7 +92,7 @@ def build_claude_home(
 
 @dataclass(frozen=True)
 class EscapeCase:
-    """`~/.claude` 밖을 가리키는 symlink 음성 케이스 (P-28, P-29, T-07)."""
+    """`~/.claude`(또는 프로젝트 디렉터리) 밖을 가리키는 symlink 음성 케이스 (P-28, P-29, T-07, P-30)."""
 
     outside_dir: Path  # CLAUDE_HOME 밖의 실제 디렉터리
     outside_file: Path  # 유효한 usage 줄이 든 파일. 읽히면 집계나 표식으로 드러난다
@@ -100,6 +100,9 @@ class EscapeCase:
     dir_link_name: str  # dir_link 의 이름 (transcript_dir_name 후보로 쓴다)
     file_link: Path  # <project_dir>/linked.jsonl -> outside_file
     subdir_link: Path  # <project_dir>/linkdir -> outside_dir
+    # <project_dir>/creds-link.jsonl -> ../../.credentials.json (CLAUDE_HOME 안이지만 프로젝트 밖 decoy).
+    # 상대 링크라 "CLAUDE_HOME 아래인가" 만 보는 검사는 통과한다 -> 프로젝트 디렉터리 기준으로 막아야 한다
+    credentials_link: Path
 
 
 def add_symlink_escapes(parent: Path, claude_home: ClaudeHome) -> EscapeCase:
@@ -131,4 +134,14 @@ def add_symlink_escapes(parent: Path, claude_home: ClaudeHome) -> EscapeCase:
     os.symlink(leak, file_link)
     subdir_link = claude_home.project_dir / "linkdir"
     os.symlink(outside, subdir_link, target_is_directory=True)
-    return EscapeCase(outside, leak, dir_link, dir_link_name, file_link, subdir_link)
+    credentials_link = claude_home.project_dir / "creds-link.jsonl"
+    os.symlink(os.path.join("..", "..", ".credentials.json"), credentials_link)
+    return EscapeCase(
+        outside,
+        leak,
+        dir_link,
+        dir_link_name,
+        file_link,
+        subdir_link,
+        credentials_link,
+    )
