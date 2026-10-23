@@ -3,7 +3,11 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/aidlc/hooks/memory_cascade.py\" session-start", "timeout": 15 }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/aidlc/hooks/run.sh\" session-start",
+            "timeout": 15
+          }
         ]
       }
     ],
@@ -11,21 +15,33 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/aidlc/hooks/memory_cascade.py\" post-tool-use", "timeout": 15 }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/aidlc/hooks/run.sh\" post-tool-use",
+            "timeout": 15
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/aidlc/hooks/memory_cascade.py\" stop", "timeout": 15 }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/aidlc/hooks/run.sh\" stop",
+            "timeout": 15
+          }
         ]
       }
     ],
     "PreCompact": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/aidlc/hooks/memory_cascade.py\" pre-compact", "timeout": 15 }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/aidlc/hooks/run.sh\" pre-compact",
+            "timeout": 15
+          }
         ]
       }
     ]

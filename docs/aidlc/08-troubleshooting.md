@@ -4,6 +4,10 @@
 
 | 증상 | 원인 | 해결 |
 |------|------|------|
+| 터미널에서 `/aidlc-init` 이 "command not found" | `/aidlc-*` 는 Claude Code 명령 | Claude Code 채팅 입력창에 입력. 터미널로 하려면 `python aidlc/scripts/aidlc.py init` |
+| 입력창에 `/` 를 쳐도 `aidlc-*` 명령이 없음 | 저장소의 하위 폴더를 열었거나, 세션이 `.claude/skills/` 생성 전에 시작됨 | VSCode 에서 저장소 최상위 폴더를 열고 Claude Code 새 대화 시작 |
+| Windows 에서 `python3` 가 Store 를 열거나 "not found" | Windows 는 `python` / `py` 가 기본 | 문서의 `python3` 를 `python` 으로 바꿔 실행 |
+| Windows 에서 Hook 이 동작하지 않음 (cascade 메시지 없음) | Git Bash 없음 → Hook 이 PowerShell 로 실행되어 `bash` 를 못 찾음 | Git for Windows 설치 후 새 세션. 다른 경로에 설치했다면 `CLAUDE_CODE_GIT_BASH_PATH` 설정 |
 | `/aidlc-interpret` 가 바로 멈춤 | user 문서에 `{{ }}` 가 남음 | `python3 aidlc/scripts/aidlc.py check user` 로 위치 확인. 해당 없음이면 `N/A (이유)` |
 | 해석 결과가 계속 HOLD | 확신도 L 인 Must FR 또는 미해결 충돌 | 00 해석서 §3·§4 를 보고 user 문서 수정 후 재실행 |
 | `team-qa` 등 팀 Agent 가 안 보임 | 세션 시작 후 생성된 Agent | 세션 재시작 |

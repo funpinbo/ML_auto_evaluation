@@ -36,6 +36,8 @@ flowchart TD
 
 ## 빠른 시작
 
+`/aidlc-*` 는 **Claude Code 채팅 입력창**에 입력하는 명령입니다 (터미널 아님). VSCode 에서 이 저장소 최상위 폴더를 열고 Claude Code 패널에서 `/` 를 치면 목록이 나옵니다. 자세히: [시작하기](docs/aidlc/01-getting-started.md#명령은-어디에-입력하나요)
+
 ```text
 /aidlc-init            # workspace/ 생성 (User 템플릿 4종 + 메모리 4종)
 # workspace/user/*.md 작성 — {{ }} 가 필수 항목

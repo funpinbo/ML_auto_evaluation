@@ -44,6 +44,10 @@
 Hook 이 `[AI-DLC cascade n/3]` 메시지를 주면 다른 일보다 먼저 그 절차를 수행한다. Stop Hook 은 미처리 cascade 가 있으면 종료를 막는다(최대 3회).
 frontmatter 값(rev, last_merged_stm, synced_ltm_rev, completed_phases)은 Hook 이 판정에 쓰므로 정확히 갱신한다.
 
+## 실행 환경
+- 문서·Skill 의 `python3` 는 Windows 에서 `python` 또는 `py` 로 바꿔 실행한다 (먼저 `python3 --version` 이 실제로 동작하는지 확인).
+- Hook 은 `aidlc/hooks/run.sh` 를 거쳐 실행된다. Hook 명령을 바꿀 때 이 런처를 우회하지 않는다.
+
 ## 검증
 - Hook 엔진 테스트: `python3 -m unittest discover -s aidlc/tests -v`
 - 문서 Gate: `python3 aidlc/scripts/aidlc.py check [user|project]`

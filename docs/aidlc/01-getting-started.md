@@ -1,21 +1,61 @@
 # 1. 시작하기
 
 ## 준비물
-- Claude Code (CLI, 데스크톱, 웹 어디서든)
-- Python 3.10 이상 — `python3 --version`
+- **Claude Code** — VSCode 확장(권장) 또는 CLI
+- **Python 3.10 이상**
+- **Windows:** [Git for Windows](https://git-scm.com/download/win) (Git Bash 포함). Hook 이 Git Bash 로 실행됩니다.
 - (선택) PyYAML — YAML 형식 OpenAPI 명세를 문서화할 때만 필요. JSON 명세는 없어도 됩니다.
 
-설치 확인:
+## 명령은 어디에 입력하나요?
+
+이 문서에는 두 종류의 명령이 나옵니다. **입력하는 곳이 다릅니다.**
+
+| 모양 | 예 | 입력하는 곳 |
+|------|----|------------|
+| `/` 로 시작 | `/aidlc-init`, `/aidlc-run 3` | **Claude Code 채팅 입력창** (터미널 아님) |
+| `python ...` | `python aidlc/scripts/aidlc.py check user` | **터미널** (VSCode 통합 터미널 등) |
+
+### `/aidlc-*` 명령 (Claude Code 채팅 입력창)
+1. VSCode 에서 **이 저장소 폴더(최상위)** 를 엽니다 — `파일 > 폴더 열기`. 하위 폴더를 열면 `.claude/` 를 못 찾아 명령이 안 보입니다.
+2. Claude Code 패널을 엽니다 (사이드바의 Claude 아이콘, 또는 명령 팔레트 `Claude Code: Open`).
+3. 입력창에 `/` 를 치면 명령 목록이 뜹니다. `/aidlc-init` 을 고르고 Enter.
+
+CLI 를 쓰는 경우: 터미널에서 저장소 폴더로 이동해 `claude` 를 실행한 뒤, 그 안의 입력창에 `/aidlc-init` 을 입력합니다.
+
+> 터미널(bash, PowerShell)에 `/aidlc-init` 을 직접 치면 "command not found" 가 납니다. Claude Code 안에서만 동작하는 명령입니다.
+>
+> 처음 열 때 Claude Code 가 이 프로젝트의 Hook 사용을 확인하면 허용하세요. Hook 은 `.claude/settings.json` 에 등록돼 있습니다.
+
+### `python ...` 명령 (터미널)
+Python 실행 명령은 OS 마다 다릅니다. 이 문서는 `python3` 로 적지만, 아래 표에 맞게 바꿔 입력하세요.
+
+| OS | 명령 | 확인 |
+|----|------|------|
+| macOS / Linux | `python3` | `python3 --version` |
+| Windows | `python` 또는 `py` | `python --version` |
+
+> Windows 에서 `python3` 를 치면 Microsoft Store 가 열리거나 "Python was not found" 가 나올 수 있습니다. `python` 이나 `py` 를 쓰세요.
+> Hook 은 `aidlc/hooks/run.sh` 가 사용 가능한 Python 을 자동으로 찾으므로 따로 설정할 필요가 없습니다.
+
+`/aidlc-*` 명령 일부는 터미널 명령으로도 할 수 있습니다:
+
+| Claude Code 명령 | 같은 일을 하는 터미널 명령 |
+|------------------|---------------------------|
+| `/aidlc-init` | `python aidlc/scripts/aidlc.py init` |
+| `/aidlc-status` (일부) | `python aidlc/scripts/aidlc.py status` |
+
+나머지(`/aidlc-interpret`, `/aidlc-analyze` …)는 Agent 가 문서를 읽고 쓰는 단계라 Claude Code 안에서만 실행됩니다.
+
+## 설치 확인 (터미널)
 ```bash
-python3 -m unittest discover -s aidlc/tests    # OK 가 나오면 준비 완료
+python3 -m unittest discover -s aidlc/tests    # OK 가 나오면 준비 완료 (Windows: python -m unittest ...)
 python3 aidlc/scripts/aidlc.py teams           # 팀 카탈로그가 출력되면 정상
 ```
-
-> Hook 은 `.claude/settings.json` 에 등록돼 있어 저장소를 열면 자동으로 켜집니다. 처음 열 때 Claude Code 가 프로젝트 Hook 사용을 확인하면 허용하세요.
 
 ## 따라 하기: 첫 Task 실행까지
 
 ### 1단계 — 작업공간 만들기
+Claude Code 채팅 입력창에:
 ```text
 /aidlc-init
 ```

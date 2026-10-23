@@ -1,6 +1,6 @@
 # 7. CLI 레퍼런스
 
-모든 스크립트는 Python 표준 라이브러리만 사용합니다 (YAML 명세만 PyYAML 필요). 저장소 루트에서 실행하세요.
+모든 스크립트는 Python 표준 라이브러리만 사용합니다 (YAML 명세만 PyYAML 필요). **저장소 루트의 터미널**에서 실행하세요. 예시는 `python3` 로 적었으며 Windows 에서는 `python` 또는 `py` 로 바꿉니다.
 
 ## `aidlc/scripts/aidlc.py`
 
@@ -44,6 +44,7 @@ GATE FAIL — user layer: 미작성 3개, 누락 문서 0개
 
 ## `aidlc/hooks/memory_cascade.py`
 Claude Code 가 `.claude/settings.json` 의 Hook 으로 호출합니다. 입력은 stdin 의 Hook JSON.
+Hook 은 `bash aidlc/hooks/run.sh <인자>` 로 실행되고, `run.sh` 가 `python3` → `python` → `py` 순서로 **실제로 실행되는** Python 3.10+ 을 찾아 넘깁니다 (Windows 의 가짜 `python3` 는 건너뜀). Python 이 없으면 경고만 남기고 exit 0.
 
 | 인자 | Hook 이벤트 | 출력 |
 |------|------------|------|
@@ -55,7 +56,7 @@ Claude Code 가 `.claude/settings.json` 의 Hook 으로 호출합니다. 입력�
 
 수동 테스트:
 ```bash
-echo '{}' | python3 aidlc/hooks/memory_cascade.py stop
+echo '{}' | bash aidlc/hooks/run.sh stop
 ```
 Hook 내부 오류는 stderr 에만 기록하고 항상 exit 0 으로 끝나 세션을 막지 않습니다.
 
