@@ -1,6 +1,6 @@
 ---
-rev: 12
-last_merged_stm: 12
+rev: 13
+last_merged_stm: 13
 ---
 # Long-term Memory
 
@@ -49,6 +49,8 @@ last_merged_stm: 12
 | D-36 | 런처: `run.py`(표준 라이브러리) + `run.sh`(python3/python/py 실제 실행 탐지, LF) + `run.bat`(`py -3`→`python`, Store 별칭은 실행 검사로 배제, CRLF, ASCII 메시지). `<venv python> -m app --port N`(cwd monitor/backend, 호스트 인자 없음), 자식 env 에서 `AIDLC_MONITOR_PORT`·`PIP_USER`·`PYTHONHOME` 제거, 최대 10개 포트, 마커 `.venv/.requirements.sha256`(설치 전 삭제·성공 후 기록), `--no-cache-dir`, health 최대 20 s 대기, 정상 종료 코드 {0,-2,-15,130,143,0xC000013A}, SIGTERM 전달 후 5 s → terminate → kill | ADR-001 §2.3~2.5 | - | (STM-0012) |
 | D-37 | **가정(PO 미답 Q-P3)**: run.bat 은 실패(exit≠0) 시 `pause` 로 창 유지, 정상 종료 시 닫힘. 다르면 run.bat 끝 3줄만 수정 | 권장 기본값 | - | (STM-0012) |
 | D-38 | 의존성: httpx==0.28.1 유지(httpx2 전환은 ops 로거 수정 후), pip-audit 은 dev 의존성이 아니라 릴리스 전 일회용 venv 에서 실행, mypy==2.4.0 dev 추가. user/02 §9 는 직접 채택 판단에 적용하고 전이 예외는 ADR-006 Decision 5 표로 기록(경계 밖 7건·라이선스 예외 3건, 전 36 핀 PyPI 실측) — 전이 적용 여부는 사용자 확인 대기(Q-P5) | ADR-006 Decision 2·5 | 즉시 httpx2 | (STM-0012) |
+| D-39 | seq 발급: 대시보드가 쓸 때마다 `next_seq = max(prev, baseline) + 1` (prev = `.control.json` seq, 없음/broken 이면 0; baseline = `loop-status.json` baseline_seq, 없음/위반이면 0). 두 파일은 매번 새로 읽고 캐시하지 않는다. 대시보드는 loop-status 를 읽기만(단일 작성자 유지). CLI 는 변경 없음 — `(seq > baseline_seq, state)` 만 본다. 제어 파일 **삭제는 broken 이 아니라 없음(정상, 대기 유지)**, broken 은 exit 2(계속 진행) | I-16, D-04, FR-005 AC-18 | CLI 가 seq 변경 감지, 시각 기반 id | (STM-0013, ADR-004 Decision 1.1) |
+| D-40 | 엄격 정수: seq·baseline 은 JSON 정수 리터럴만(bool·`7.0`·지수·NaN/Infinity 거부), 범위 0/1~2^53-1, CLI·대시보드가 같은 술어(`type(x) is int` + 범위, parse_int 16자리 초과 거부, parse_constant 예외 → broken, 예외는 밖으로 나가지 않음). 상한 초과 next_seq → 쓰지 않음 + 500 `CONTROL_WRITE_FAILED`(고정 문구), 기존 파일 보존. 쓰기: "두 파일 읽기 → 계산 → os.replace" 를 프로세스 락으로 직렬화, 락 획득 2 s 타임아웃, 락 안 os.replace 재시도 5×50 ms, 임시 파일 finally 삭제 | security 리뷰 FAIL 조치, D-26 | 스키마만 신뢰 | (STM-0013, loop-cli §2.1·§7.1·§7.3) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -90,6 +92,8 @@ last_merged_stm: 12
 - uvicorn 0.54 는 정상 종료 후 신호를 다시 올려 자식이 -2/-15 로 끝난다 → 런처는 정상 종료로 처리 (STM-0012)
 - `monitor/tools/check_dist_fresh.py` 가 dist 해시 규칙의 단일 출처(정렬 POSIX 경로, 파일별 sha256, CRLF→LF), 로컬 게이트는 `monitor/.venv/bin/python monitor/tools/check.py` (STM-0012)
 - user/02 §9 1년 규칙은 전이 포함 모든 핀을 PyPI JSON 해당 버전 최초 `upload_time` 으로 확인한다. ADR 본문과 표의 직접/전이 표기를 일치시킨다 (STM-0012, architecture 재리뷰)
+- 단일 작성자 파일에 단조 카운터가 필요하면, 작성자가 상대 파일(읽기 전용)의 기준값을 하한으로 쓴다 — 작성자 수를 늘리지 않고 파일 손실에서 복구 (STM-0013)
+- JSON Schema `integer` 는 `7.0` 을 허용하고 Python int 파싱은 4300자리 제한이 있다 → 정수 계약은 `type(x) is int` 술어와 상한을 명시하고 읽는 쪽·쓰는 쪽이 공유한다 (STM-0013)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -109,7 +113,7 @@ last_merged_stm: 12
 | ~~I-13~~ | privacy.md N-02·N-04 가 ADR-011 §4·§5 와 불일치(포트 검사 "선택", TrustedHost 문구), 중복 Host·선행 0·userinfo·Content-Type 접두 함정 케이스 없음 | T-005 리뷰 기준 | 열림 → T-024 (T-005 전) | (STM-0005) → **해소** (STM-0008: privacy.md §5.1 H-01~H-22, §5.2 C-01~C-11) |
 | ~~I-14~~ | ADR-011 §9 에 405(OPTIONS 포함)·Starlette 기본 HTTPException 매핑 규칙과 기본 `{"detail":...}` 본문 금지가 없음, HostGuard 의 websocket/lifespan scope 처리 미정, SSE GET Origin 검사 여부 미정(교차 출처 EventSource 로 슬롯 소모 → 가용성) | 앱 셸 구현 | 열림 → T-025 (T-005 전) | (STM-0005) → **해소** (STM-0009, ADR-011 §9~§12) |
 | I-15 | `aidlc.py check docs` 는 검사 대상 문서가 0개여도 PASS(exit 0) → P1 종료 조건·T-014 DoD 가 문서 없이 충족될 수 있음. 대시보드는 D-21 의 `docs/README.md` 조건으로 보완. 프레임워크 Gate 변경은 별도 승인 필요 | Gate 신뢰성 | 열림 → 사용자 질문 Q-P2 | (STM-0006) |
-| I-16 | 루프 도중 `.control.json` 이 깨지거나 삭제되면 대시보드가 seq 1 을 써서 `baseline_seq` 이하가 되어 CLI 가 새 pause/resume 을 무시 | FR-005 신뢰성 | 열림 → T-026 (T-008 전) | (STM-0006) |
+| ~~I-16~~ | 루프 도중 `.control.json` 이 깨지거나 삭제되면 대시보드가 seq 1 을 써서 `baseline_seq` 이하가 되어 CLI 가 새 pause/resume 을 무시 | FR-005 신뢰성 | 열림 → T-026 (T-008 전) | (STM-0006) → **해소** (STM-0013, ADR-004 Decision 1.1, loop-cli §7) |
 | I-17 | FR-002 Phase 진행률 바: `plan` SSE topic 이 M2 라 P1 에서 실시간 갱신 보장 안 됨(01 §5.1 흐름 3 과 어긋남) | UX | 열림 → T-012 에서 `tasks` 이벤트 시 `/plan` 재조회 | (STM-0006) |
 | I-18 | PO 미답 질문: Q-P1(단계 3 에 `.claude/agents` 요구?), Q-P2(docs Gate 빈 대상), Q-P3(run.bat 실패 시 창 유지), Q-P4(R-01 실패 시 후퇴안은 01 §10 과 다름 → PO 결정) | 수용 기준 | 열림 → 사용자에게 질문 | (STM-0006); Q-P3 은 권장 기본값으로 구현(D-37), Q-P5(user/02 §9 가 전이 의존성에도 적용되는가 — 현재 직접 채택에만 적용) 추가 |
 | I-19 | home_guard 빈틈: 인자 없는 `os.listdir()` 통과(None 인자), 경로 판정 중 OSError 시 통과, 원래 `XDG_CONFIG_HOME/claude` 미등록. 가드 밖: 정수 fd·`dir_fd`·`os.stat`/`os.readlink`·서브프로세스 서버 — test-strategy 에 미기재 | 테스트 격리 | 열림 → T-013 (비차단) | (STM-0007) |
@@ -127,6 +131,7 @@ last_merged_stm: 12
 | I-31 | 런처 테스트가 못 잡는 변이 8/15: `_STOP_CODES` 매핑 제거, `--no-cache-dir` 제거, 자식 env 변수 제거 누락, 런처 BIND_HOST 변경 등 | 회귀 탐지 | 열림 → T-029 | (STM-0012, qa 리뷰) |
 | I-32 | 미검증: run.bat 실기(Windows), cmd 가 현재 폴더의 `py.exe`/`python.exe` 를 먼저 찾는 문제, Node 없이 첫 화면(AC-4)·빈 패널 화면(AC-13)은 dist 이후 | KPI-02·SCOPE-01 | 열림 → T-014(UAT K2-W)·T-013 | (STM-0012) |
 | I-33 | 공급망: `==` 고정이나 해시 미검증(`--require-hashes` 없음), health 응답 위장(같은 사용자 로컬 프로세스) 위험이 threat-model 에 미기재 | 공급망 | 열림 → T-029(P2 전 평가)·T-022(문서) | (STM-0012, security 리뷰) |
+| I-34 | JSON 중복 키는 마지막 값 사용 — CLI·대시보드 판정 일치 근거가 stdlib 동작뿐 | 루프 제어 | 수용(L) | (STM-0013, security 재리뷰) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -186,6 +191,7 @@ last_merged_stm: 12
 - 프레임워크가 문서 작성 시점보다 새로우면 소스를 직접 읽고 테스트로 고정한다 — LTM 의 Starlette 함정 설명과 FastAPI 0.161 실제 동작이 달랐다 (STM-0010)
 - 의존성 교체(httpx→httpx2)는 로거 이름 같은 부수 효과로 다른 팀 테스트를 깬다 — 고정 전에 새 venv 로 전체 테스트를 돌린다 (STM-0012)
 - ADR 사실 문장(라이선스·릴리스일)은 표본이 아니라 전수 실측으로 쓴다 — T-007 은 이 때문에 architecture 재리뷰를 2회 받았다 (STM-0012)
+- 상태 파일 장애는 "삭제" 와 "손상" 을 따로 설계한다 — 동작이 다르다(없음 = 정상 대기, broken = exit 2 계속) (STM-0013)
 
 ## 6. 용어집 (Glossary)
 | 용어 | 정의 |
