@@ -50,7 +50,6 @@ from fixtures.jsonl_gen import FIXED_NOW
 from fixtures.runtime_files import write_claude_status
 from fixtures.workspace import WorkspaceInfo, build_workspace
 
-
 # 환경 변수를 바꾸기 전에 기록한다 (import 시점 = 세션 시작 전).
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HOME_VARS = ("HOME", "USERPROFILE")

@@ -196,7 +196,9 @@ class HomeGuard:
                         return None  # 순환 링크: OS 가 ELOOP 로 실패시킨다
                     target = os.readlink(candidate)
                     base = (
-                        target if os.path.isabs(target) else os.path.join(prefix, target)
+                        target
+                        if os.path.isabs(target)
+                        else os.path.join(prefix, target)
                     )
                     current = _norm(os.path.join(base, *parts[index + 1 :]))
                     redirected = True
@@ -237,7 +239,9 @@ class HomeGuard:
             )
         finally:
             self._local.busy = False
-        raise RealHomeAccessError(f"real home access blocked by test guard: {violation}")
+        raise RealHomeAccessError(
+            f"real home access blocked by test guard: {violation}"
+        )
 
     # --- 테스트 지원 ----------------------------------------------------------
     @contextmanager

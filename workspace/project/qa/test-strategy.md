@@ -2,7 +2,7 @@
 doc: test-strategy
 layer: project
 owner: qa
-sources: [user/02 §5·§10, 20 §2 QS-01~QS-11, 40 §1.1, qa charter, security/privacy.md §1~§7, contracts/README §2·§3, ADR-002, ADR-006, ADR-009, LTM D-02·D-07·D-13]
+sources: [user/02 §5·§10, 20 §2 QS-01~QS-11, 40 §1.1, qa charter, security/privacy.md §1~§7, contracts/README §2·§3, ADR-002, ADR-004, ADR-006, ADR-009, ADR-011, LTM D-02·D-07·D-13]
 status: draft
 ---
 # AI-DLC Monitor 테스트 전략
@@ -10,7 +10,7 @@ status: draft
 이 문서는 qa 가 Monitor 의 테스트 범위·소유·fixture·실행 방법을 정한 기준이다. 상위 규칙은 user/02 §5(테스트 표준)·§10(공통 DoD)이고, 보안 통과 기준은 `workspace/project/security/privacy.md`(체크리스트 ID P-/N-/W-/D-/T-)가 정의한다. 이 문서는 그 ID 를 **참조만** 한다.
 
 ## 1. 원칙
-1. **실제 `~/.claude` 를 쓰지 않는다** (02 §5, CON-06, privacy.md P-30). 모든 입력은 `tmp_path` 에 만든 합성 workspace·합성 CLAUDE_HOME 이다. `conftest.py` 의 autouse fixture 가 모든 테스트에서 `HOME`/`USERPROFILE` 을 임시 경로로 바꾸고 `AIDLC_ROOT`/`CLAUDE_HOME` 을 지운다. 앱에 경로를 주는 방법은 환경 변수 주입(`app_env`)뿐이다.
+1. **실제 `~/.claude` 를 쓰지 않는다** (02 §5, CON-06, privacy.md P-30). 모든 입력은 `tmp_path` 에 만든 합성 workspace·합성 CLAUDE_HOME 이다. `conftest.py` 가 3겹으로 막는다: (a) `pytest_configure` 에서 세션 임시 홈으로 `HOME`/`USERPROFILE` 을 바꾸고 `AIDLC_ROOT`/`CLAUDE_HOME`/`CLAUDE_CONFIG_DIR`/`XDG_CONFIG_HOME` 을 지운다(session·module fixture·수집 시점 import 포함), (b) autouse `_isolate_home` 이 테스트마다 같은 치환을 반복한다, (c) `fixtures/home_guard.py` 의 `sys.addaudithook` 가드가 시작 시 기록한 실제 홈(환경 변수 + `pwd`) 아래 `open`/`os.listdir`/`os.scandir` 를 시스템 호출 전에 막고 기록한다(테스트가 예외를 삼켜도 `_home_guard_check` 가 실패시킴). 저장소·`sys.prefix`·`sys.path`·임시 디렉터리는 허용 목록이고, 실제 홈 자체·그 조상·`~/.claude` 류 민감 경로는 허용 목록에 넣을 수 없다. 감사 hook 은 제거할 수 없으므로 `enabled` 플래그로 끄고 켜며, 음성 테스트는 `home_guard.expect()` 블록 안에서 접근을 시도한다(`scenarios/test_home_guard.py`). 앱에 경로를 주는 방법은 환경 변수 주입(`app_env`)뿐이다.
 2. **결정적이다.** 생성기는 seed 고정(`DEFAULT_SEED = 20261023`), 시각은 `FIXED_NOW = 2026-10-23T09:00:00Z` 기준. 같은 인자 → 같은 바이트. 시계·난수·네트워크 의존 테스트는 만들지 않는다.
 3. **기대값은 생성기가 함께 계산하고, 독립 구현으로 교차 검증한다.** `JsonlManifest.expected_buckets`(생성기)와 `reference_parser.aggregate`(파일을 다시 읽는 오라클)가 같아야 하며, 앱 수집기는 둘과 비교한다.
 4. **음성 케이스도 실제로 실행한다.** 계약 스키마는 examples 뿐 아니라 위반 입력까지 jsonschema 로 돌린다(LTM 패턴: `format` 비강제, `$` 끝 개행).
@@ -58,9 +58,9 @@ status: draft
 | S-07 | 본문 비노출 (메모리 집계) | `claude_home` | 집계 구조를 재귀 순회해 표식 0회, 문자열 값은 모델명·warnings 뿐. 거짓 양성 토큰 `FALSE_POSITIVE_TOKENS=777777`·symlink 이탈 토큰 `424242` 가 합계에 섞이지 않음 | T-03·P-03·P-11 |
 | S-08 | 사전 필터·content 비접근 | `claude_home` + `json.loads` spy / content trap | usage 없는 줄에서 `json.loads` 0회, `message.content` 접근 0 | T-05·T-06·P-06 |
 | S-09 | `transcript_dir_name` 재검증 + symlink 이탈 | `runtime_files.INVALID_DIR_NAMES`/`VALID_DIR_NAMES`, `symlink_escape` | 음성 이름 전부 거부 → 폴백, symlink 디렉터리·파일·하위 디렉터리 링크를 열지 않음, 실패 로그에 값 없음 | T-07·P-25~P-29, D-13 |
-| S-10 | 읽기 전용 (해시 불변) | **`closed_stm_workspace`**, `full_workspace`, `broken_workspace` | 모든 조회 API·SSE 반복 호출 전후 `hash_tree(root)` 동일. `diff_manifests` 로 새 파일 0 (POST control 시나리오에서만 `workspace/memory/.control.json` 추가 허용) | CON-03, QS-07, T-04·W-01·W-03 |
-| S-11 | Hook 규칙 대조 | `full_workspace`, `closed_stm_workspace`, 변형 tasks(rev/synced 불일치) | API 의 pending cascade·Phase 집계가 `memory_cascade.Memory` 판정과 같은 결론. `aidlc.py status` 는 **복사본 workspace 에서만** 실행해 비교(D-07: closed STM 을 아카이브하는 부작용) | FR-003, QS-09 |
-| S-12 | 일시정지/재개 E2E | `runtime_files.LOOP_SCENARIOS`, `control_doc`, `app_env` | POST pause → `.control.json` 스키마 통과 → CLI `wait-resume` exit 10(대기) → POST resume → exit 0, 남은 반복 진행. `pause_over_limit` → exit 20(STM 무변경), `heartbeat_expired` → "세션 없음" 표시, `.control.json` 깨짐 → exit 2 | FR-005, QS-11, D-09~D-11 |
+| S-10 | 읽기 전용 (해시 불변) | **`closed_stm_workspace`**, `full_workspace`, `broken_workspace` | 모든 조회 API·SSE 반복 호출 전후 `hash_tree(root)` 동일. `diff_manifests` 로 새 파일 0 (POST control 시나리오에서만 `workspace/memory/.control.json` 추가 허용). **ADR-009 Decision 2**: `memory_cascade` 의 쓰기 함수 `write_doc`, `reset_stm`, `archive_stm_if_closed`, `snapshot_stm`, `save_state`, `handle`, `main` 을 호출 즉시 예외를 던지는 가짜로 바꾼(monkeypatch) 상태에서 모든 조회 API·SSE 를 호출해 전부 성공해야 한다 | CON-03, QS-07, T-04·W-01·W-03 |
+| S-11 | Hook 규칙 대조 | `full_workspace`, `closed_stm_workspace`, 변형 tasks(rev/synced 불일치) | API 의 pending cascade·Phase 집계가 `memory_cascade.Memory` 판정과 같은 결론. `aidlc.py status` 는 **복사본 workspace 에서만** 실행해 비교(D-07: closed STM 을 아카이브하는 부작용). 비교 중에도 S-10 과 같은 ADR-009 Decision 2 가짜 쓰기 함수(`write_doc`…`main` 7종 예외)를 건 채 API 결론을 구한다 | FR-003, QS-09 |
+| S-12 | 일시정지/재개 E2E | `runtime_files.LOOP_SCENARIOS`, `control_doc`, `app_env` | POST pause → `.control.json` 스키마 통과 → CLI `wait-resume` exit 10(대기) → POST resume → exit 0, 남은 반복 진행. `pause_over_limit` → exit 20(STM 무변경), `heartbeat_expired` → "세션 없음" 표시, `.control.json` 깨짐 → exit 2. exit 64(인자 오류)·1(예기치 못한 오류)·`NO_LOOP` 응답(D-09 exit 계약, ADR-004 루프 제어, ADR-011 에러 코드)은 이 E2E 범위가 아니라 **backend T-008 단위 테스트** 범위다(qa 는 리뷰로 확인) | FR-005, QS-11, D-09~D-11 |
 | S-13 | Host/Origin 가드 회귀 | `app_env` | privacy N-02~N-06 표의 케이스 전수 (단위 테스트는 backend `tests/api/`, qa 는 회귀 묶음만) | QS-05 |
 | P-01 | 첫 화면 성능 | `workspace_100_tasks` + 30일 JSONL(§5) | 접속 → 모든 Must 패널 REST 응답(값 또는 warming) ≤ 2초, 패널 응답 p95 ≤ 200 ms | NFR-001, QS-01 |
 | P-02 | 증분 처리 | P-01 + JSONL 1 MB 추가 | 증분 처리 ≤ 10 ms(기준 PC), 변경 반영 ≤ 5초 | QS-02 |
@@ -79,14 +79,15 @@ FR 별 수용 기준 → 테스트 ID 추적은 product 스토리(T-004) 확정 
 ### 6.1 pytest fixture (`conftest.py`)
 | fixture | 제공 |
 |---------|------|
-| `_isolate_home` (autouse) | `HOME`/`USERPROFILE` → 임시 경로, `AIDLC_ROOT`/`CLAUDE_HOME` 삭제 |
+| `_isolate_home` (autouse) | `HOME`/`USERPROFILE` → 임시 경로, `AIDLC_ROOT`/`CLAUDE_HOME`/`CLAUDE_CONFIG_DIR`/`XDG_CONFIG_HOME` 삭제 |
+| `_home_guard_check` (autouse) / `home_guard` / `session_home` | 감사 hook 가드 위반이 있으면 테스트 실패 / 가드 객체(`expect()`, `disabled()`, `take()`) / `pytest_configure` 가 만든 세션 임시 홈 |
 | `fixed_now` | `FIXED_NOW` |
 | `workspace_factory(kind, task_count=12, name=None)` | 매번 새 디렉터리에 workspace 생성 |
 | `empty_workspace` / `partial_workspace` / `full_workspace` / `broken_workspace` / `closed_stm_workspace` | 종류별 workspace (§6.2) |
 | `workspace_100_tasks` | Task 100개 full workspace (NFR-001) |
 | `claude_home_factory(workspace_root, **options)` | 합성 CLAUDE_HOME (`write_project_jsonl` 옵션 전달, `with_jsonl`, `with_decoys`) |
 | `claude_home` | `full_workspace` 에 대응하는 30일 JSONL + edge case + decoy |
-| `symlink_escape` | CLAUDE_HOME 밖을 가리키는 symlink 3종(디렉터리·파일·하위 디렉터리). 만들 수 없는 환경이면 skip |
+| `symlink_escape` | CLAUDE_HOME 밖을 가리키는 symlink 3종(디렉터리·파일·하위 디렉터리) + CLAUDE_HOME 안 decoy 를 가리키는 상대 링크 `projects/<enc>/creds-link.jsonl -> ../../.credentials.json`(프로젝트 디렉터리 기준으로 막아야 함, P-28·P-30). 만들 수 없는 환경이면 skip |
 | `app_env` | full workspace + 정상 스냅샷(`transcript_dir_name` = 합성 dir_name) + CLAUDE_HOME 을 환경 변수로 주입. `AppEnv.env` 로 앱 팩토리 설정에도 쓸 수 있음 |
 
 ### 6.2 가짜 workspace (`fixtures/workspace.py`, AIDLC_ROOT 로 주입)
@@ -108,7 +109,7 @@ FR 별 수용 기준 → 테스트 ID 추적은 product 스토리(T-004) 확정 
 
 ### 6.4 본문 표식 (`fixtures/markers.py`, privacy.md §7)
 - 12종 고유 표식(`ALL_MARKERS`): 본문, 도구 입출력, 본문 속 경로, `cwd`, sessionId, uuid/parentUuid, requestId, 허용 목록 밖 임의 키, `transcript_dir_name`, settings.json statusLine 명령, decoy 자격 증명, symlink 이탈 파일. 영숫자만 사용(경로 인코딩 `[^A-Za-z0-9] → -` 에도 보존).
-- `assert_no_markers(*texts, extra=..., where=...)` — 실패 메시지에는 표식 종류만 적고 주변 내용은 적지 않는다. `ClaudeHome.forbidden_strings()` 를 `extra` 로 넘기면 dir_name·CLAUDE_HOME 경로·프로젝트 경로까지 검사한다.
+- `assert_no_markers(*texts, extra=..., where=...)` — 실패 메시지에는 라벨(`BODY` 등)과 `extra[i]` 인덱스만 적는다. 표식 값·extra 값(경로·dir_name)·주변 내용은 적지 않는다. `ClaudeHome.forbidden_strings()` 를 `extra` 로 넘기면 dir_name·CLAUDE_HOME 경로·프로젝트 경로까지 검사한다.
 
 ### 6.5 합성 CLAUDE_HOME (`fixtures/claude_home.py`)
 - `<tmp>/claude_home/projects/<enc>/` (enc = workspace 루트 인코딩 + `-<DIR_NAME 표식>`), `settings.json`(statusLine + 읽으면 안 되는 `env` 키), decoy `.credentials.json`·`history.jsonl`(열리면 표식으로 드러남, P-21·P-30).
