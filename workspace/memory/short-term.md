@@ -49,6 +49,8 @@ opened_at: 2026-10-23T07:36:23+00:00
 ## 5. 새로 발견된 Task (Task 후보)
 - [cicd] `.gitignore` 에 `workspace/memory/.control.json`, `workspace/memory/.monitor/` 추가 (contracts/README §2, ADR-003 §6·ADR-004 §1)
 - [architecture] ADR-004 를 contracts/loop-cli.md 결정(exit 64/1, episode 기준 상한, NO_LOOP, loop-end --done)으로 갱신 + ADR-011·20 §5 에러 코드에 `TOO_MANY_STREAMS`(503) 추가 — R-01 스파이크 결과 반영 시 함께
+- [architecture] (security 리뷰 FAIL) `claude-status.schema.json` 의 `transcript_dir_name` pattern 을 인코딩 디렉터리 문자 집합으로 제한하고 `.`/`..` 를 배제(예: `^(?!\.{1,2}$)[A-Za-z0-9._-]{1,255}$` — Claude Code 인코딩 규칙 확인 후 확정), 설명에 "reader 는 스키마 관대 처리와 별개로 이 필드를 재검증하고, 해석 결과가 `~/.claude/projects/` 직속 하위인지 확인한다" 와 "transcript_dir_name 은 경로 정보 — API 응답·SSE·로그에 원문 노출 금지(ADR-011 §8)" 를 추가. README §3 에 보안 필드는 reader 도 검증한다는 예외 명시
+- [backend] (security 리뷰) statusline_reader·usage resolver 구현 시 transcript_dir_name 이 `..`·구분자·제어문자면 무시(폴백)하고, resolve 후 `~/.claude/projects` 하위 경계 검사 + 이를 확인하는 테스트, 응답에 transcript_dir_name 미포함 테스트
 - [backend] loop_control.py·control 서비스·watcher/SSE 구현 시 contracts/*.schema.json 으로 쓰기 결과를 검증하는 테스트 포함 (jsonschema 는 dev 의존성 후보 → 도입 시 ADR-006 갱신 필요, 아니면 수기 검증)
 
 ## 6. 결과 & 인수인계
@@ -60,3 +62,4 @@ opened_at: 2026-10-23T07:36:23+00:00
 <!-- /aidlc-run 이 리뷰 게이트 대상 팀을 리뷰 모드로 호출하면 각 팀이 한 줄씩 추가 -->
 | 팀 | 결과 | 근거 | 필요한 조치 |
 |----|------|------|-------------|
+| security | FAIL | jsonschema(Draft202012) 로 직접 확인: 3 스키마 check_schema·examples 통과, 최상위·중첩 객체 모두 `additionalProperties:false`(cwd·session_id·중첩 추가 키 거부 확인). claude-status 필드 = ADR-003 Decision 3 허용 목록과 일치, raw session_id·transcript_path·cwd·본문 없음(session_hash = sha256 앞 12자). 쓰기 경로: 대시보드 = `.control.json` 1개(README §2, loop-cli §2), CLI 는 .control.json 미작성, ADR-011 Host 400 BAD_HOST / POST Origin·JSON 403 FORBIDDEN_ORIGIN 과 SSE 연결 규칙 일치, SSE·stdout 에 경로·ID·본문 금지 명시. 결함: (1) `transcript_dir_name` pattern `^[^/\\]+$` 가 `..`, `.`, NUL·개행 등 제어문자를 허용 — 이 값은 `~/.claude/projects/<name>` 해석 힌트라 `..` 이면 `~/.claude/**/*.jsonl` 로 접근 범위(projects/<enc>/** 만)를 벗어날 수 있고, README §3 "읽는 쪽은 관대" 원칙상 reader 쪽 재검증 요구도 없음. (2) transcript_dir_name 은 인코딩된 절대경로(홈·사용자명 포함)인데 API 응답·로그·SSE 노출 금지가 계약에 명시 안 됨(ADR-011 §8 경로 금지 대상으로 봐야 함). (3) `.gitignore` 에 `.control.json`·`.monitor/` 미등록(git check-ignore 확인, README 는 "있어야 한다"로만 문서화) | §5 후보: [architecture] transcript_dir_name pattern 강화 + reader 재검증·비노출 명시 / [backend] 해석 시 projects 하위 경계 검증 테스트 / [cicd] .gitignore (기존 후보, P1 코드 Task 전 선행) |
