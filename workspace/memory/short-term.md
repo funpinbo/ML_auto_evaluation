@@ -23,7 +23,7 @@ opened_at: 2026-10-23T10:48:11+00:00
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->
-- 2026-10-23 10:50 UTC — **세션 중단(사용자 요청 "Stop").** team-qa 가 기존 파일을 읽던 중 중지. 재개: STM `status: active` 유지 상태로 `/aidlc-run` → team-qa 작업 모드 재위임. 재개 시 `git status` 로 수정된 파일이 있는지 먼저 확인.
+- 2026-10-23 10:50 UTC — **세션 중단(사용자 요청 "Stop").** team-qa 작업 도중 중지. **미완료 변경이 커밋 df9508e 에 포함됨**: conftest.py, fixtures/{claude_home,markers,runtime_files}.py, scenarios/test_fixture_jsonl_smoke.py 수정 + fixtures/home_guard.py 신규. 중단 시점 pytest: `2 failed, 72 passed in 1.64s`. 미작성: test-strategy.md ⑦ 보강 등. 재개: STM `status: active` 유지 상태로 `/aidlc-run` → team-qa 작업 모드 재위임, 먼저 위 파일들을 끝까지 읽어 ①~⑦ 중 어디까지 됐는지 확인.
 
 ## 4. 발견 사항 (LTM 후보)
 - 결정:
