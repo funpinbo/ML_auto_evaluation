@@ -1,0 +1,43 @@
+# AI-DLC Monitor 개발·검사 의존성 (cicd 소유). 사용자 설치 대상 아님 — run.py 는 requirements.txt 만 설치한다.
+# 설치: monitor/.venv/bin/python -m pip install -r monitor/backend/requirements-dev.txt   (Windows: monitor\.venv\Scripts\python.exe)
+# 2026-10-23 T-007: Python 3.13 깨끗한 venv 에 런타임 + 아래 직접 dev 의존성을 설치하고 `pip freeze` 로 전이까지 == 고정.
+# 직접 dev 의존성: pytest, pytest-cov, httpx(TestClient), jsonschema(ADR-006 Decision 2), ruff, mypy(I-29).
+#
+# httpx vs httpx2 (I-22): Starlette 1.9 TestClient 는 httpx2 를 우선 찾고 httpx 면 StarletteDeprecationWarning 을 낸다.
+#   httpx2 2.16.0 으로 바꾸면 테스트 클라이언트 요청이 "httpx2" 로거 INFO 로 찍혀 tests/ops/test_logging_config.py 가
+#   실패한다(logging_config 는 "httpx" 로거만 WARNING 으로 낮춤). ops 가 "httpx2" 로거를 낮춘 뒤 httpx2 로 교체한다(STM §5).
+#   httpx 0.28.1(2024-12)·httpcore 1.0.9(2025-04) 는 02 §9 "1년 내 릴리스" 밖 — dev 전용 임시 수용.
+# pip-audit 는 여기에 넣지 않는다(전이 의존성이 많고 일부가 오래됨) — 릴리스 전 별도 임시 venv 에서 실행(절차: workspace/project/release/release.md, P1 말 Task).
+-r requirements.txt
+
+# 테스트
+pytest==9.1.1
+pytest-cov==7.1.0
+coverage==7.17.0
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.7.0
+Pygments==2.21.0
+colorama==0.4.6 ; sys_platform == "win32"
+
+# TestClient HTTP 클라이언트 (I-22)
+httpx==0.28.1
+httpcore==1.0.9
+certifi==2026.10.23
+
+# 계약 스키마 검증 (ADR-006 Decision 2, I-12: jsonschema-specifications 2025.9.1 이 여전히 최신)
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+referencing==0.37.0
+rpds-py==2026.9.1
+attrs==26.1.0
+
+# 린트·포맷
+ruff==0.17.2
+
+# 타입 검사 (I-29). pathspec 은 MPL-2.0(dev 전이 전용)
+mypy==2.4.0
+mypy_extensions==1.1.0
+librt==0.16.0 ; platform_python_implementation != "PyPy"
+ast_serialize==0.13.1
+pathspec==1.1.1

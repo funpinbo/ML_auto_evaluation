@@ -11,6 +11,9 @@ monitor/.venv/
 monitor/frontend/node_modules/
 monitor/backend/.pytest_cache/
 monitor/backend/.ruff_cache/
+monitor/backend/.mypy_cache/
+monitor/.mypy_cache/
+.ruff_cache/
 monitor/backend/.coverage
 monitor/backend/.coverage.*
 monitor/backend/htmlcov/

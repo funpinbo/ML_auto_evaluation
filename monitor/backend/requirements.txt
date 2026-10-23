@@ -1,5 +1,8 @@
-# AI-DLC Monitor 런타임 의존성 (ADR-006: fastapi·uvicorn(extras 없음)·pydantic + 전이 의존성 전부 == 고정)
-# 2026-10-23 T-005 에서 monitor/.venv (Python 3.13) `pip freeze` 로 기록. 고정 정책·dev 목록은 T-007(cicd) 소유.
+# AI-DLC Monitor 런타임 의존성 — 사용자 PC 에 run.py 가 monitor/.venv 로 설치하는 유일한 목록 (cicd 소유).
+# ADR-006: 직접 의존성은 fastapi·uvicorn(extras 없음)·pydantic 3개, 나머지는 전이 의존성이며 전부 == 고정(02 §9).
+# 2026-10-23 T-005 가 pip freeze 로 기록 → T-007(cicd) 인수·검토: PyPI 최신과 일치, 라이선스 MIT/BSD/Apache(typing_extensions 는 PSF-2.0),
+# Windows/macOS 전용 전이 의존성 없음(Python 3.11+ 기준). 이 파일을 바꾸면 run.py 해시 마커가 달라져 다음 실행에서 재설치된다.
+# 개발 도구는 requirements-dev.txt.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1

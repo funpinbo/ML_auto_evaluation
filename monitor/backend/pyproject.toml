@@ -1,0 +1,25 @@
+# AI-DLC Monitor backend 도구 설정 (cicd 소유). 패키지 빌드 설정은 없다 — 배포는 run.py + requirements.txt(ADR-001).
+# 게이트 일괄 실행: python monitor/tools/check.py
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+# ruff 기본 규칙(E4, E7, E9, F) 유지. 규칙 추가는 별도 Task 로(기존 코드 일괄 수정 필요).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+
+[tool.coverage.report]
+# 02 §5: backend 라인 커버리지 70% 이상
+fail_under = 70
+show_missing = false
+skip_covered = true
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app", "scripts"]
