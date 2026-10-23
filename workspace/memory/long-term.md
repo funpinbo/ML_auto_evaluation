@@ -22,6 +22,30 @@ last_merged_stm: 0
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
 
+### product
+- (아직 없음)
+
+### architecture
+- (아직 없음)
+
+### qa
+- (아직 없음)
+
+### cicd
+- (아직 없음)
+
+### ops
+- (아직 없음)
+
+### security
+- (아직 없음)
+
+### backend
+- (아직 없음)
+
+### frontend
+- (아직 없음)
+
 ## 5. 교훈 (Lessons Learned)
 - (반복하지 말아야 할 실수, 효과가 있었던 방법)
 
