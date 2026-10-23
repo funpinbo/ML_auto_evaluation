@@ -279,10 +279,85 @@
           }
         }
       }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "생존·소스 접근 가능 여부·데우기 진행률·앱 식별자",
+        "description": "소스 문제는 HTTP 200 + `meta.status=partial`. 런처는 `data.app == \"aidlc-monitor\"` 로 판정한다.",
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_HealthData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Envelope_HealthData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[HealthData]"
+      },
       "Envelope_MemoryData_": {
         "properties": {
           "data": {
@@ -507,6 +582,108 @@
           "checked_at"
         ],
         "title": "Gate"
+      },
+      "HealthData": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "description": "프로세스 생존. 응답이 오면 항상 ok"
+          },
+          "app": {
+            "type": "string",
+            "const": "aidlc-monitor",
+            "title": "App",
+            "description": "앱 식별자. 런처의 중복 실행 판정용 — 값 고정"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/HealthSources"
+          },
+          "dist": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing"
+            ],
+            "title": "Dist",
+            "description": "프론트 dist(index.html) 유무 (ADR-005 §3)"
+          },
+          "usage_warming": {
+            "$ref": "#/components/schemas/UsageWarming"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "app",
+          "version",
+          "sources",
+          "dist",
+          "usage_warming"
+        ],
+        "title": "HealthData"
+      },
+      "HealthSources": {
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing",
+              "stale",
+              "unreadable"
+            ],
+            "title": "Workspace",
+            "description": "`<AIDLC_ROOT>/workspace/memory` 디렉터리"
+          },
+          "claude_projects": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing",
+              "stale",
+              "unreadable"
+            ],
+            "title": "Claude Projects",
+            "description": "`<CLAUDE_HOME>/projects` 디렉터리 (사용량 기록 위치)"
+          },
+          "statusline": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing",
+              "stale",
+              "unreadable"
+            ],
+            "title": "Statusline",
+            "description": "status line 스냅샷 파일. 없음 = statusLine 미실행 또는 첫 응답 전"
+          },
+          "control": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing",
+              "stale",
+              "unreadable"
+            ],
+            "title": "Control",
+            "description": "`.control.json`. 없음은 정상(첫 일시정지 전)이라 경고를 만들지 않는다"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace",
+          "claude_projects",
+          "statusline",
+          "control"
+        ],
+        "title": "HealthSources",
+        "description": "데이터 소스별 접근 가능 여부. 파일 내용은 읽지 않고 메타데이터(stat)만 본다."
       },
       "MemoryData": {
         "properties": {
@@ -1128,6 +1305,40 @@
           "items"
         ],
         "title": "TasksData"
+      },
+      "UsageWarming": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "warming",
+              "done",
+              "unknown"
+            ],
+            "title": "State"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress",
+            "description": "0.0~1.0, 모르면 null"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "UsageWarming",
+        "description": "사용량 캐시 데우기 진행률 (ADR-002 §6). 수집기(T-010) 전에는 `not_started`."
       }
     }
   },

@@ -18,6 +18,7 @@
 | plan | `GET` | [`/api/v1/plan`](#get-apiv1plan) | Phase 별 진행률과 현재·완료 Phase |
 | plan | `GET` | [`/api/v1/tasks`](#get-apiv1tasks) | Task 목록 (팀·상태·Phase 필터, AND) |
 | memory | `GET` | [`/api/v1/memory`](#get-apiv1memory) | STM·LTM·Task 동기 값과 미처리 cascade |
+| health | `GET` | [`/api/v1/health`](#get-apiv1health) | 생존·소스 접근 가능 여부·데우기 진행률·앱 식별자 |
 
 ## pipeline
 
@@ -328,7 +329,90 @@ cascade 판정은 Hook `Memory.pending().level` (ADR-009). `aidlc.py status` 는
 curl -X GET 'http://127.0.0.1:8765/api/v1/memory'
 ```
 
+## health
+
+### GET /api/v1/health
+
+**생존·소스 접근 가능 여부·데우기 진행률·앱 식별자**
+
+소스 문제는 HTTP 200 + `meta.status=partial`. 런처는 `data.app == "aidlc-monitor"` 로 판정한다.
+
+- **인증:** 불필요
+- **operationId:** `get_health`
+
+#### 응답
+
+| 상태 코드 | 설명 | 본문 |
+|---|---|---|
+| `200` | Successful Response | Envelope_HealthData_ |
+| `400` | BAD_HOST — Host 가드 | ErrorResponse |
+| `405` | METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함) | ErrorResponse |
+| `500` | INTERNAL_ERROR | ErrorResponse |
+
+`200` 응답 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | HealthData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
+
+```json
+{
+  "data": {
+    "status": "string",
+    "app": "string",
+    "version": "string",
+    "sources": {
+      "workspace": "ok",
+      "claude_projects": "ok",
+      "statusline": "ok",
+      "control": "ok"
+    },
+    "dist": "ok",
+    "usage_warming": {
+      "state": "not_started",
+      "progress": 0.0
+    }
+  },
+  "meta": {
+    "status": "ok",
+    "warnings": [
+      "string"
+    ],
+    "error": {
+      "code": "SOURCE_MISSING",
+      "message": "string"
+    },
+    "generated_at": "string",
+    "source_mtime": "string"
+  }
+}
+```
+
+#### 예시
+
+```bash
+curl -X GET 'http://127.0.0.1:8765/api/v1/health'
+```
+
 ## 스키마
+
+### Envelope_HealthData_
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | HealthData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
 
 ### Envelope_MemoryData_
 
@@ -411,6 +495,34 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/memory'
 | `no_documents` | boolean | ✅ | 검사 대상 문서 0개로 PASS (R5) |
 | `error_code` | SourceErrorCode enum: `SOURCE_MISSING`, `SOURCE_PARSE_ERROR`, `SOURCE_UNREADABLE`, `GATE_TIMEOUT`, `PROJECT_DIR_NOT_FOUND`, `SNAPSHOT_STALE` \| null |  |  |
 | `checked_at` | string \| null | ✅ |  |
+
+### HealthData
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `status` | string | ✅ | 프로세스 생존. 응답이 오면 항상 ok |
+| `app` | string | ✅ | 앱 식별자. 런처의 중복 실행 판정용 — 값 고정 |
+| `version` | string | ✅ |  |
+| `sources` | HealthSources | ✅ | 데이터 소스별 접근 가능 여부. 파일 내용은 읽지 않고 메타데이터(stat)만 본다. |
+| `sources.workspace` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | `<AIDLC_ROOT>/workspace/memory` 디렉터리 |
+| `sources.claude_projects` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | `<CLAUDE_HOME>/projects` 디렉터리 (사용량 기록 위치) |
+| `sources.statusline` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | status line 스냅샷 파일. 없음 = statusLine 미실행 또는 첫 응답 전 |
+| `sources.control` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | `.control.json`. 없음은 정상(첫 일시정지 전)이라 경고를 만들지 않는다 |
+| `dist` | string enum: `ok`, `missing` | ✅ | 프론트 dist(index.html) 유무 (ADR-005 §3) |
+| `usage_warming` | UsageWarming | ✅ | 사용량 캐시 데우기 진행률 (ADR-002 §6). 수집기(T-010) 전에는 `not_started`. |
+| `usage_warming.state` | string enum: `not_started`, `warming`, `done`, `unknown` | ✅ |  |
+| `usage_warming.progress` | number \| null |  | 0.0~1.0, 모르면 null |
+
+### HealthSources
+
+데이터 소스별 접근 가능 여부. 파일 내용은 읽지 않고 메타데이터(stat)만 본다.
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `workspace` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | `<AIDLC_ROOT>/workspace/memory` 디렉터리 |
+| `claude_projects` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | `<CLAUDE_HOME>/projects` 디렉터리 (사용량 기록 위치) |
+| `statusline` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | status line 스냅샷 파일. 없음 = statusLine 미실행 또는 첫 응답 전 |
+| `control` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | `.control.json`. 없음은 정상(첫 일시정지 전)이라 경고를 만들지 않는다 |
 
 ### MemoryData
 
@@ -562,3 +674,12 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/memory'
 | `items[].checked` | boolean | ✅ |  |
 | `items[].status` | TaskStatus enum: `open`, `done`, `blocked`, `active` | ✅ |  |
 | `items[].well_formed` | boolean | ✅ |  |
+
+### UsageWarming
+
+사용량 캐시 데우기 진행률 (ADR-002 §6). 수집기(T-010) 전에는 `not_started`.
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `state` | string enum: `not_started`, `warming`, `done`, `unknown` | ✅ |  |
+| `progress` | number \| null |  | 0.0~1.0, 모르면 null |
