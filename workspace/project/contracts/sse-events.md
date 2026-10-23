@@ -14,6 +14,8 @@ sources: [20 §5 F2, 20 §4 변경 감지 & SSE 허브, ADR-008, ADR-010, ADR-01
 
 ## 1. 연결
 - `GET /api/v1/events` — 쿼리·본문 없음. ADR-011 Host 가드 적용(다른 Host → 400 `BAD_HOST`).
+- **출처 검사 (ADR-011 §11)**: `Origin` 이 있는데 `http://127.0.0.1:<port>`·`http://localhost:<port>` 가 아니면(`null` 포함), 또는 `Sec-Fetch-Site` 가 있는데 `same-origin`·`none` 이 아니면 스트림을 열지 않고 403 `{"error":{"code":"FORBIDDEN_ORIGIN",...}}`. 이 거부는 연결 슬롯을 소모하지 않는다. 두 헤더 모두 없으면 통과.
+- 판정 순서: Host(400 `BAD_HOST`) → 출처(403 `FORBIDDEN_ORIGIN`) → 상한(503 `TOO_MANY_STREAMS`) → 스트림 시작. `GET`·`HEAD` 외 메서드는 405 `METHOD_NOT_ALLOWED`(ADR-011 §9).
 - 응답 헤더: `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` + ADR-011 보안 헤더.
 - 동시 연결 상한 **8**. 초과 시 스트림을 열지 않고 HTTP **503** `{"error":{"code":"TOO_MANY_STREAMS","message":"..."}}` → 프론트는 5초 폴링 폴백.
 - `id:` 필드는 쓰지 않는다(재전송·재생 없음). `Last-Event-ID` 는 무시한다. 재연결 직후 프론트는 모든 패널을 한 번 다시 조회한다.
