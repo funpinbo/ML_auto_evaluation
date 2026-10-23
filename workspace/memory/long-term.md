@@ -1,6 +1,6 @@
 ---
-rev: 3
-last_merged_stm: 3
+rev: 4
+last_merged_stm: 4
 ---
 # Long-term Memory
 
@@ -26,6 +26,8 @@ last_merged_stm: 3
 | D-13 | `transcript_dir_name` 은 `^(?!\.{1,2}(?![\s\S]))[A-Za-z0-9._-]{1,255}(?![\s\S])` 로 제한, reader 는 재검증 + resolve 결과가 `~/.claude/projects/` 직속 하위인지 확인(실패 시 폴백, 값 없이 코드만 기록), API 응답·SSE·로그 노출 금지 | security 리뷰 FAIL 조치 | 관대한 reader | (STM-0001, contracts/README §2·§3) |
 | D-14 | 비-JSON Content-Type 의 변경 요청도 403 `FORBIDDEN_ORIGIN` 으로 거부 (415 는 계약 위반=FAIL) | 20 §QS-05 가 명시, 20 §8 에러 코드는 닫힌 집합(415 없음), ADR-011 §5 가 같은 항목에서 묶어 서술 | 415 | (STM-0003, architecture 리뷰) |
 | D-15 | Origin 헤더 없는 로컬 POST 는 잔여 위험으로 수용 | ADR-011 이 토큰 인증을 기각 | 토큰 인증 | (STM-0003, threat-model.md) |
+| D-16 | 테스트는 실제 `~/.claude` 를 쓰지 않는다: autouse 로 `HOME`/`USERPROFILE` 을 임시 경로로 바꾸고 `AIDLC_ROOT`/`CLAUDE_HOME` 을 지우며, 앱 경로 주입은 `app_env` 환경 변수로만 (CON-06) | user/02 §5, privacy.md §7 | 실제 기록 사용 | (STM-0004) |
+| D-17 | 사용량 집계 검증은 3자 대조: 생성기 기대값(`JsonlManifest.expected_buckets`) ↔ 독립 오라클(`reference_parser.aggregate`) ↔ 앱 수집기 | 오라클 오류 차단 | 생성기만 신뢰 | (STM-0004) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -39,6 +41,10 @@ last_merged_stm: 3
 - 존재하지 않는 경로의 무시 여부는 `git check-ignore --no-index -v <path>` 로 확인. 디렉터리 패턴은 하위 파일 경로로 검사 (STM-0002)
 - 보안 리뷰 체크리스트 ID 체계: P-(개인정보) / N-(네트워크 Host·Origin) / W-(쓰기 경로) / D-(의존성) / T-(본문 비노출 테스트). threat-model 의 검증 열이 이 ID 를 가리킨다. ID 는 한 문서(privacy.md)에서 정의하고 다른 문서는 참조만 한다 (STM-0003)
 - 주의: privacy.md 의 체크리스트 D-01~D-04(의존성)는 이 파일 §1 결정 D-01~ 과 번호가 겹친다. 맥락(문서)으로 구분하고, 인용 시 출처 문서를 함께 적는다 (STM-0003)
+- 본문 표식(content marker)은 영숫자만 — Claude Code 경로 인코딩(`[^A-Za-z0-9] → -`)에서 깨지지 않게 (STM-0004)
+- `tests/` 에 `__init__.py` 없음 → `from fixtures...` import, 테스트 파일 basename 은 디렉터리가 달라도 중복 금지 (STM-0004)
+- 실패 메시지는 표식 종류·키 이름만 출력하고 주변 내용·경로 원문은 출력하지 않는다 — 테스트 로그도 노출 경로다 (STM-0004)
+- 시나리오 ID(S-01~S-13, P-01~P-02)는 `workspace/project/qa/test-strategy.md` §4 에서만 정의하고 다른 문서는 참조만 (STM-0004)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -50,6 +56,10 @@ last_merged_stm: 3
 | I-05 | ADR-011 §5 에 비-JSON Content-Type 도 403 `FORBIDDEN_ORIGIN` 이라는 한 줄 보강 필요 (D-14) | 문서 정합성 (비차단) | 열림 → [architecture] 후보 | (STM-0003) |
 | I-06 | 보안 통제가 모두 "요구" 상태(구현 전). 구현 후 P/N/W/T 항목을 실제 실행 근거와 함께 재확인 필요 | 보안 | 열림: backend 구현 후 security 리뷰 | (STM-0003) |
 | I-07 | tasks.md T-002 DoD 경로 `workspace/teams/security/` 가 실제 경로 `workspace/project/security/` 와 불일치 | 문서 정합성 | 열림 → cascade 2/3 에서 정정 | (STM-0003) |
+| I-08 | jsonschema(dev) 가 ADR-006 dev 목록에 없음 | 문서 정합성 | 열림 → T-021 | (STM-0004) |
+| I-09 | 홈 격리가 function 범위라 session 범위 fixture·수집 시점 import 는 실제 HOME 을 볼 수 있음, `CLAUDE_CONFIG_DIR` 미처리 | 테스트 신뢰성·개인정보 | 열림 → T-023 (T-005 전) | (STM-0004) |
+| I-10 | 하드 링크는 `resolve()` 경계 검사로 탐지 불가 | 경로 이탈 | 열림 → T-022 (방침 결정) | (STM-0004) |
+| I-11 | 30일 JSONL 329~658 MB 크기는 선형 추정(pad 9000~18000) | 성능 테스트 정확도 | 열림 → T-013 실측 | (STM-0004) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -62,6 +72,7 @@ last_merged_stm: 3
 
 ### qa
 - (아직 없음)
+- fixture 9종(workspace, jsonl_gen, claude_home, hashing, markers, contracts, runtime_files, reference_parser) + smoke 72건. 실행: `monitor/.venv/bin/python -m pytest monitor/backend/tests -q` (STM-0004)
 
 ### cicd
 - (아직 없음)
@@ -76,6 +87,7 @@ last_merged_stm: 3
 - 보안 경계는 "허용 필드 allow-list 복사"다. `"usage":` 사전 필터는 성능용이며 보안 경계가 아니다 (본문에 usage 문자열이 있어도 유입되지 않음) (STM-0003)
 - 체크리스트 ID 체계는 §2 참조 (P-/N-/W-/D-/T-). 비-JSON Content-Type 도 403 FORBIDDEN_ORIGIN 이 기준 (D-14) (STM-0003)
 - 쓰기 경로는 `.control.json` 1개뿐 (R-10·QS-07). Origin 없는 로컬 POST 는 수용된 잔여 위험 (D-15) (STM-0003)
+- 런타임 감사: 임시 audit-hook 플러그인으로 전체 테스트 중 실제 HOME 아래 open/listdir/scandir 0건 확인하는 방식이 유효했다 → conftest 상시 가드로 승격 예정 (STM-0004)
 
 ### backend
 - (아직 없음)
@@ -91,6 +103,7 @@ last_merged_stm: 3
 - 보안 리뷰는 계약 단계에서도 효과가 있다 — 구현 전에 경로 이탈(`..`) 위험을 막았다 (STM-0001)
 - 번호 참조를 문서 두 개에 나눠 쓰면 어긋나기 쉽다 — 한 문서에서 ID 를 정의하고 다른 문서는 참조만 한다 (STM-0003)
 - 리뷰 모드가 문서 대조만으로도 구현 전 모순(415 vs 403, Host 포트 무시 vs N-02)을 잡아냈다 (STM-0003)
+- 중단된 세션을 이어받을 때는 테스트 통과만 보지 말고 모듈을 끝까지 읽고 `git status`·커밋과 대조해 반쯤 쓴 파일이 없는지 확인한다 (STM-0004)
 
 ## 6. 용어집 (Glossary)
 | 용어 | 정의 |
