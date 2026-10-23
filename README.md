@@ -12,8 +12,13 @@ flowchart TD
   subgraph P[Project Layer · Agent가 해석/분석]
     P0[00 요구 해석서]; P1[10 비즈니스 모델]; P2[20 아키텍처 + ADR]; P3[30 데이터 EDA]; P4[40 팀 구성]
   end
-  subgraph T[Team Layer]
-    T1[backend]; T2[frontend]; T3[data]; T4[cicd]; T5[ops]
+  subgraph T[Team Layer · 카탈로그 17팀]
+    T1[기획·설계: product* design architecture*]
+    T2[개발: backend frontend mobile integration dba]
+    T3[데이터·AI: data analytics ml]
+    T4[품질: qa*]
+    T5[플랫폼·운영: cicd* infra ops*]
+    T6[보안·거버넌스: security* docs]
   end
   subgraph M[Memory · 실행]
     PL[Plan] --> TK[Tasks] --> LT[Long-term] --> ST[Short-term]
@@ -34,9 +39,9 @@ flowchart TD
 # workspace/user/*.md 작성 — {{ }} 가 필수 항목
 /aidlc-interpret       # Gate 검사 → doc-interpreter 가 00 해석서 + 질문 목록
 /aidlc-analyze         # business / data (병렬) → architecture → 교차 검증
-/aidlc-teams           # 팀 결정 → teams/<id>/charter.md + .claude/agents/team-<id>.md
+/aidlc-teams           # core 6팀 + 조건부 팀 → teams/<id>/charter.md + .claude/agents/team-<id>.md
 /aidlc-plan            # plan.md (Phase) + tasks.md (Task) + LTM 시드
-/aidlc-run 3           # Task 3개 실행: STM 열기 → 팀 Agent → STM 닫기 → cascade
+/aidlc-run 3           # Task 3개: STM 열기 → 팀 Agent → 리뷰 게이트 → STM 닫기 → cascade
 /aidlc-status          # 현재 위치와 다음 명령
 ```
 
@@ -52,10 +57,32 @@ CLAUDE.md                        운영 규칙 (계층, 소유권, cascade)
 aidlc/
   templates/user|project|team|memory/   모든 문서 템플릿
   hooks/memory_cascade.py        메모리 cascade 엔진 (표준 라이브러리만 사용)
-  scripts/aidlc.py               init / check / new-team / status
+  teams/catalog.json             팀 카탈로그 17팀 (core 6)
+  scripts/aidlc.py               init / check / teams / new-team / status
   tests/                         cascade 엔진 테스트
 workspace/                       ← /aidlc-init 이 생성하는 실제 프로젝트 인스턴스
 ```
+
+## 팀 카탈로그
+
+`aidlc/teams/catalog.json` 에 실제 조직에서 운영되는 17개 팀이 정의돼 있습니다. 팀마다 미션, 소유 범위, 산출물, 입력 문서, 협업 대상, DoD, 품질 지표, **리뷰 게이트**, Agent 지침이 들어 있고, `new-team` 이 이 값으로 charter 와 팀 Agent 를 생성합니다.
+
+| 그룹 | 팀 (`*` = core, 항상 생성) |
+|------|-----------------------------|
+| 기획·설계 | product* (PO/PM), design (UX/UI), architecture* |
+| 개발 | backend, frontend, mobile, integration (외부 연동), dba |
+| 데이터·AI | data (Data Eng), analytics (BI), ml (ML/AI·LLM·RAG) |
+| 품질 | qa* (QA/Test) |
+| 플랫폼·운영 | cicd*, infra (Cloud/IaC), ops* (SRE) |
+| 보안·거버넌스 | security* (DevSecOps), docs (Tech Writing) |
+
+```bash
+python3 aidlc/scripts/aidlc.py teams              # 카탈로그 보기
+python3 aidlc/scripts/aidlc.py new-team --core    # core 6팀 생성
+python3 aidlc/scripts/aidlc.py new-team ml data   # 조건부 팀 추가
+```
+
+팀 Agent 는 **작업 모드**와 **리뷰 모드**로 동작합니다. `/aidlc-run` 은 Task 를 담당 팀에 맡긴 뒤, 변경 내용이 리뷰 게이트 대상에 해당하는 팀들(코드 변경이면 qa 는 항상)이 독립적으로 검증하고 나서야 STM 을 닫습니다.
 
 ## 메모리 계층과 Hook
 

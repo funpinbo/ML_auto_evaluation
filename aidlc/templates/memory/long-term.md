@@ -20,11 +20,7 @@ last_merged_stm: 0
 |----|------|-----------|------|------|
 
 ## 4. 팀별 지식 (Team Knowledge)
-### backend
-### frontend
-### data
-### cicd
-### ops
+<!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
 
 ## 5. 교훈 (Lessons Learned)
 - (반복하지 말아야 할 실수, 효과가 있었던 방법)

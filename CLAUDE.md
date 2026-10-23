@@ -7,13 +7,20 @@
 |-------|------|--------|------|
 | User | `workspace/user/` | **사용자만** | 개요·기능 요구, 개발 표준, 아키텍처 철학, 데이터 정의 |
 | Project | `workspace/project/` | 분석 Agent | 해석서(00), 비즈니스(10), 아키텍처(20)+ADR, 데이터 EDA(30), 팀 구성(40) |
-| Team | `workspace/teams/<id>/`, `.claude/agents/team-<id>.md` | team-architect | 팀 charter, 팀 실행 Agent |
+| Team | `workspace/teams/<id>/`, `.claude/agents/team-<id>.md` | team-architect | 팀 charter, 팀 실행 Agent (카탈로그: `aidlc/teams/catalog.json`) |
 | Memory | `workspace/memory/` | 오케스트레이터 + Hook | Plan > Tasks > Long-term > Short-term |
 
 규칙 우선순위: user/02 개발 표준 > user/03 아키텍처 철학 > project 분석서 > team charter > LTM.
 
 ## 파이프라인
 `/aidlc-init` → (사용자 작성) → `/aidlc-interpret` → `/aidlc-analyze` → `/aidlc-teams` → `/aidlc-plan` → `/aidlc-run [N]` 반복. 언제든 `/aidlc-status`.
+
+## 팀 운영
+- 카탈로그 17개 팀: product, design, architecture / backend, frontend, mobile, integration, dba / data, analytics, ml / qa / cicd, infra, ops / security, docs
+- **core 6팀은 항상 생성:** product, architecture, qa(Test), cicd, ops, security. 나머지는 분석서 근거가 있을 때만.
+- 팀 Agent 는 두 모드: **작업 모드**(자기 소유 범위만 수정) / **리뷰 모드**(수정 없이 charter §9 기준 검증, STM §7 에 PASS/FAIL).
+- Task 완료 전 리뷰 게이트: 변경이 해당하는 리뷰 팀 전체가 검증한다. 코드 변경 Task 는 qa 리뷰가 항상 필수.
+- 다른 팀 소유 범위가 필요하면 직접 고치지 말고 STM §5 에 `[팀id]` Task 후보로 남긴다.
 
 ## 쓰기 소유권 (반드시 지킬 것)
 - `workspace/user/*` 는 Agent 가 **수정하지 않는다**. 문제는 00 해석서의 질문으로 남긴다. (사용자가 직접 요청한 경우만 예외)
