@@ -1,6 +1,6 @@
 ---
-rev: 10
-last_merged_stm: 10
+rev: 11
+last_merged_stm: 11
 ---
 # Long-term Memory
 
@@ -44,6 +44,8 @@ last_merged_stm: 10
 | D-31 | 정적 dist 는 `app.router.default` + `redirect_slashes=False`: `/api`·`/api/...` 는 메서드 무관 404, 그 밖은 파일 있으면 GET/HEAD 서빙·다른 메서드 405 `Allow: GET, HEAD`, 없으면 404(SPA 폴백 없음), dist 없으면 `/` 만 안내 HTML. 세그먼트 `.`/`..`/숨김/`\`/NUL/`:` 거부 + `resolve(strict=True)` 후 dist 하위 확인 | 405 가로채기 회피, 경로 이탈 차단 | `Mount("/")`, StaticFiles(html=True) | (STM-0010) |
 | D-32 | 기본 포트 8765, 변경은 `AIDLC_MONITOR_PORT` 또는 `python -m app --port N`(우선)만. 선행 0·0·범위 밖 거부, 바인딩 `127.0.0.1` 상수(호스트 옵션 없음) | ADR-001, D-19 | - | (STM-0010) |
 | D-33 | 패널 규칙: `meta.warnings` 가 하나라도 있으면 `partial`, 파일 없음 = 값 `null` + 경고, 판정 파일 깨짐 = 해당 값만 `null`/`unknown`. `## Blocked` 는 줄의 첫 T-ID 만 막힘. FR-001 단계 1 의 "00 미작성 0개" 는 project Gate 출력 줄을 쓴다(플레이스홀더 규칙 단일 출처) | FR-001~003 AC | - | (STM-0010) |
+| D-34 | health 계약: envelope `data = {status:"ok", app:"aidlc-monitor"(Literal 고정), version, sources{workspace, claude_projects, statusline, control: ok|missing|stale|unreadable}, dist: ok|missing, usage_warming{state: not_started|warming|done|unknown, progress}}`. statusline 10분 초과 = stale, `.control.json` 없음은 정상(경고 없음). 소스 판정은 `os.stat`/`os.access` 만(열기·나열·쓰기 없음). 런처 중복 실행 판정은 HTTP 200 + `data.app == "aidlc-monitor"`, 400 BAD_HOST 는 포트 불일치 | ADR-001 §4, ADR-005 §3 | - | (STM-0011, T-006) |
+| D-35 | 로깅: stderr 핸들러 1개(재호출 시 중복 없음), `%(asctime)s %(levelname)s %(message)s`, 줄바꿈→공백, 예외는 `(ExceptionType)` 만(traceback 없음), uvicorn access log 비활성(직접 `uvicorn app.main:app` 실행 포함), 2차 방어로 경로·UUID·ID·키·Bearer 가림. 모든 로그 호출부는 예외 타입만 남긴다 | user/02 §7, 20 §6 | access log 정제 | (STM-0011) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -78,6 +80,9 @@ last_merged_stm: 10
 - ruff 0.17.2 기본 규칙 B008·SIM117·PLW1510·TRY004·UP012 → `Annotated[..., Depends()]`, `check=False` 명시 (STM-0010)
 - 변이(mutation) 검증: 스크래치 사본에 결함을 넣어 테스트가 실제로 잡는지 확인 — T-005 에서 6/6 검출 (STM-0010, qa 리뷰)
 - uvicorn(h11)은 중복 Host 를 앱 전에 평문 400 으로 거부, absolute-form 요청은 `scope.path` 에 `http://...` 가 그대로 들어와 정적 처리기 `:` 세그먼트 거부로 404 (STM-0010, security 리뷰)
+- 로그 비노출 테스트는 로그 줄이 실제로 쓰였는지도 단언한다(빈 로그로 통과 방지) — 패널·데우기 오류를 주입해 로그를 만든다 (STM-0011)
+- 포맷터는 손으로 만든 LogRecord 로 테스트 — pytest caplog 핸들러는 잘못된 `%` 인자에서 먼저 터진다 (STM-0011)
+- 연결 지점 함수가 문서에만 있고 코드에 없으면 호출하는 쪽에 단일 출처로 두고, 이전 여부는 해당 Task 에서 정한다 (STM-0011, architecture 리뷰)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -107,6 +112,10 @@ last_merged_stm: 10
 | I-23 | ADR 문구가 구현과 다름: ADR-009 "import 부작용 없음"(실제 기본 로더는 .pyc 씀), ADR-011 §4 미들웨어 방식(실제 `__call__`), §9 정적 서빙(실제 router.default), 20 §4 디렉터리 트리·StaticFiles 문구 | 문서 정합성 | 열림 → T-009 | (STM-0010) |
 | I-24 | 소소한 하드닝: `server: uvicorn` 헤더 노출(`server_header=False`), FastAPI 텔레메트리를 `telemetry=` 로 명시 비활성 + 테스트로 고정(사용자 `OTEL_*` 환경 영향 차단), 가짜 Hook 쓰기 함수 테스트가 `kind=="full"` 에만 error 금지 단언, `asgi_http` receive 의 `sleep(3600)` 무한 대기 | 하드닝·테스트 신뢰성 | 열림 → T-008 | (STM-0010) |
 | I-25 | privacy.md §5.2 C-01~C-03·H-01~H-03 POST "통과" 기대값이 대역 핸들러 200 기준 — 실제 `/control/pause` 는 활성 루프 없으면 409 → 기대값을 "400/403/422 아님" 으로 | 테스트 정합성 | 열림 → T-008 | (STM-0010) |
+| I-26 | backend 에 `source_status()`·`warmup.progress()` 없음 → health 가 stat 판정을 직접 수행(P1 허용). 리더들의 누락·형식 오류 WARN 로그(NFR-002)·시작 시 소스 발견 INFO(20 §6) 미구현 | 관측성 | 열림 → T-010 | (STM-0011) |
+| I-27 | 문서가 health 실제 계약과 다름: 20 §5 health 행, ADR-001 §4(`data.app` 판정), contracts/README 내부 인터페이스 절(`app.state.warmup.progress() -> {state, progress}`) 없음 | 문서 정합성 | 열림 → T-009 (T-010 전 권장) | (STM-0011) |
+| I-28 | `redact()` 빈틈(2차 방어): 인코딩 디렉터리명(`-home-user-x`, `C--Users-bob-proj`), 상대 경로, `file:///`, `~bob/`, 공백 포함 Windows 경로 뒷부분. 현재 호출부는 예외 타입만 남겨 실제 노출 없음 | 로그 개인정보 | 열림 → Backlog [ops] | (STM-0011, security 리뷰) |
+| I-29 | user/02 §10 DoD "타입 검사 통과" 인데 venv 에 타입 검사기 없음, backend 기존 mypy 오류 2건(`aidlc_reader.py`, `pipeline.py`) | DoD 준수 | 열림 → T-007(mypy dev 의존성)·T-008(오류 수정) | (STM-0011, qa 리뷰) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -130,6 +139,7 @@ last_merged_stm: 10
 
 ### ops
 - (아직 없음)
+- health·logging·runbook 5종(`workspace/project/ops/`), tests/ops 40건. 변이 11/11 검출 (STM-0011)
 
 ### security
 - (아직 없음)
