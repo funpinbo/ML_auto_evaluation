@@ -1,9 +1,9 @@
 ---
-status: idle
-task: none
-team: none
+status: active
+task: T-002
+team: security
 outcome: none
-opened_at: none
+opened_at: 2026-10-23T07:47:02+00:00
 ---
 # Short-term Memory
 
@@ -13,11 +13,13 @@ opened_at: none
 > frontmatter 값: status(idle|active|closed) / outcome(done|partial|blocked)
 
 ## 1. 목표
-- Task: (T-ID 와 제목, tasks.md 에서 복사)
-- 완료 조건(DoD):
+- Task: T-002 [security] threat-model.md(STRIDE) + privacy.md(허용 필드 화이트리스트, `~/.claude` 접근 범위, Host/Origin 정책) — NFR-003, Q2 | deps: -
+- 완료 조건(DoD): workspace/teams/security/ 에 문서, 이후 리뷰 체크리스트로 사용 가능 + user/02 §10 공통 DoD
 
 ## 2. 로드한 컨텍스트
-- 관련 FR / 팀 charter / LTM 항목:
+- 관련: NFR-003, 00 Q2(본문 비접근 규칙), C2, ADR-002·003·011, contracts/README §2·§3
+- 팀 charter: workspace/teams/security/charter.md
+- LTM: D-02(허용 필드), D-08(Host/Origin), D-13(transcript_dir_name 재검증·노출 금지), security 팀 지식(경로 필드 3종 요구, symlink 재확인)
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->
