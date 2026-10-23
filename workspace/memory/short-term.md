@@ -27,6 +27,9 @@ opened_at: 2026-10-23T13:52:10+00:00
 - 20 §5 에러 코드 목록에 `METHOD_NOT_ALLOWED`·`detail` 금지·처리 순서 반영, 20 §4 API 앱 셸 행에 dist 서빙 방식·scope 처리 반영. sse-events.md §1 에 출처 검사·판정 순서 추가(추가 동작이라 schema_version 유지 — 이벤트 형식 무변경).
 - Starlette/FastAPI 가 이 환경에 설치돼 있지 않아 FULL/PARTIAL 라우팅 동작은 실행 확인하지 못함 → ADR 에 "결과가 계약, T-005 테스트로 고정" 으로 기록.
 - `python3 aidlc/scripts/aidlc.py check project` → GATE PASS (미작성 0, 누락 0).
+- (security 리뷰 FAIL 조치 1회차) ADR-011 §11 재작성: `/api/v1/events` 허용 메서드 GET 하나(HEAD 포함 그 밖 405 + `Allow: GET`, Starlette Route 의 HEAD 자동 추가 주의), 출처 검사를 메서드 무관 경로 기준으로 라우팅·슬롯 획득 전에 적용(이 경로는 403 이 405 보다 먼저), `Origin`·`Sec-Fetch-Site` 2개 이상 → 403, `Sec-Fetch-Site` strip·소문자 정확 일치(startswith/in 금지), 400/403/405 슬롯 미소모 명시. §9 405 행 예시에 `HEAD /api/v1/events`, §12 3단계 주석, Consequences 테스트 항목, 변경 이력 1줄 추가. 근거 03 §2(보안 2순위)·원칙 3.
+- sse-events.md §1: "GET·HEAD 외 405" → GET 만 허용, 출처 검사 모든 메서드·복수 헤더·소문자 정확 일치, 판정 순서 400→403→405→503. 20 §5 엔드포인트 표 `/api/v1/events` 행과 처리 순서 문구 갱신.
+- 재실행 `python3 aidlc/scripts/aidlc.py check project` → GATE PASS.
 
 ## 4. 발견 사항 (LTM 후보)
 - 결정: HTTP 에러 코드 닫힌 집합에 `METHOD_NOT_ALLOWED`(405) 추가 → 9개, 상태↔코드 1:1(500 만 2개). OPTIONS 도 405 + `Allow`, CORS 헤더 0 (ADR-011 §9, 근거 03 §2 유지보수성·원칙 3)
@@ -47,8 +50,11 @@ opened_at: 2026-10-23T13:52:10+00:00
 - [security] T-022 에 접기(T-005 비차단 — 동의): privacy.md §5 에 SSE 출처·405/OPTIONS·websocket/lifespan 케이스 표, threat-model.md 70행 'SSE 연결 고갈' 을 '교차 출처 SSE 슬롯 소모(D)' 로 갱신(완화 ADR-011 §11, 잔여 위험 구형 브라우저). 조건: ① 새 케이스는 ADR-011 §9 표·§11 예시와 같은 값으로 정의(D-25 단일 출처 충돌 방지) ② T-013 전 완료
 - [backend] T-005 DoD 에 ADR-011 §9~§12 테스트 직접 포함 시, SSE 출처 403·슬롯 미소모 테스트는 /events 가 생기는 T-011 DoD 에도 명시(T-005 는 가드 단위 테스트 + 스텁 경로, T-011 은 실제 슬롯 카운트 검증)
 
+- [security] T-022 에 접기: threat-model.md 'SSE 연결 고갈' 행을 '교차 출처 SSE 슬롯 소모(D)' 로 갱신(완화 ADR-011 §11 — GET 만 허용, 경로 기준 메서드 무관 출처 검사, 복수 헤더 거부, 잔여 위험 구형 브라우저), privacy.md §5 에 케이스 추가: 교차 출처 `HEAD /api/v1/events` → 403, 같은 출처 HEAD → 405 `Allow: GET`, `POST /api/v1/events`(교차 출처) → 403, `Origin` 2개·`Sec-Fetch-Site` 2개 → 403, `Sec-Fetch-Site: Same-Origin`·`NONE` → 통과, `Sec-Fetch-Site: same-origin, none`·빈 값 → 403 — 값은 ADR-011 §11 과 동일(D-25)
+- [backend] T-011 DoD 에 측정 테스트 포함: `/api/v1/events` 의 403(교차 출처 GET/HEAD, 복수 헤더)·405(같은 출처 HEAD·POST·OPTIONS) 응답 전후로 실제 활성 슬롯 수가 변하지 않음을 카운트로 검증(상한 8 채운 뒤 거부 요청 반복해도 9번째 정상 GET 결과가 같음) + HEAD 가 스트림 핸들러에 닿지 않음 — ADR-011 §11
+
 ## 6. 결과 & 인수인계
-- 산출물(파일/PR): workspace/project/adr/ADR-011-api-contract-and-local-security.md (§2·§4·§5·§9 보강, §10~§12 신설, Alternatives·Consequences·변경 이력), workspace/project/20-architecture-analysis.md (§4 API 앱 셸 행, §5 에러 코드 목록), workspace/project/contracts/sse-events.md (§1 출처 검사·판정 순서)
+- 산출물(파일/PR): (리뷰 조치: ADR-011 §9 예시·§11 재작성·§12·Consequences·변경 이력, sse-events.md §1, 20 §5 events 행·처리 순서) workspace/project/adr/ADR-011-api-contract-and-local-security.md (§2·§4·§5·§9 보강, §10~§12 신설, Alternatives·Consequences·변경 이력), workspace/project/20-architecture-analysis.md (§4 API 앱 셸 행, §5 에러 코드 목록), workspace/project/contracts/sse-events.md (§1 출처 검사·판정 순서)
 - 검증 결과: `python3 aidlc/scripts/aidlc.py check project` GATE PASS. ADR-011 §9 ↔ 20 §5 에러 코드 9개 일치 확인(문서 대조). Starlette 라우팅 동작(FULL/PARTIAL)은 실행 검증하지 않음(FastAPI 미설치) — T-005 테스트 몫
 - 남은 일: §5 후보 3건(security privacy.md/threat-model 반영, backend T-005 범위, frontend 코드 enum). LTM: D-20 갱신(코드 9개, METHOD_NOT_ALLOWED), I-14 해결 처리
 

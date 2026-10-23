@@ -173,14 +173,14 @@ workspace/project/contracts/openapi.json
 | GET | **`/api/v1/control`** | FR-005 | `ControlView{state, requested_at, paused_since, heartbeat_at, heartbeat_age_sec, iterations_done, iterations_total, max_pause_sec, remaining_pause_sec}` |
 | POST | **`/api/v1/control/pause`** | FR-005 | 유일한 쓰기(+resume) |
 | POST | **`/api/v1/control/resume`** | FR-005 | |
-| GET | **`/api/v1/events`** | FR-008 | SSE (M1 은 memory·control·usage·tasks topic, M2 전 topic) |
+| GET | **`/api/v1/events`** | FR-008 | SSE (M1 은 memory·control·usage·tasks topic, M2 전 topic). GET 만 허용(HEAD 등 405 `Allow: GET`), 출처 검사는 이 경로의 모든 메서드에 405 보다 먼저(ADR-011 §11) |
 | GET | `/api/v1/timeline` | FR-006 | 쿼리 `limit`(≤ 200). STM 작업 로그(§3) 줄 + 추론 이벤트(ADR-010) |
 | GET | `/api/v1/teams` | FR-007 | 팀별 할당/완료, 최근 리뷰 PASS/FAIL |
 | GET | `/api/v1/usage/cost` | FR-009 | `monitor/pricing.json` 있을 때만, 없으면 `meta.status=empty` |
 | GET | `/api/v1/alerts` | FR-010 | 조건 3종(cascade 막힘, blocked Task, 한도 ≥ 80%) |
 | GET | `/`, `/assets/*` | - | dist 정적 파일(OpenAPI 에서 제외) |
 
-에러 코드: `VALIDATION_ERROR`(422), `NOT_FOUND`(404, `/api` 아래 모르는 경로·정적 파일 없음 — SPA 폴백 없음), `METHOD_NOT_ALLOWED`(405, OPTIONS 포함 — CORS 없음), `BAD_HOST`(400), `FORBIDDEN_ORIGIN`(403, 비-JSON Content-Type 포함, SSE 교차 출처 포함), `NO_ACTIVE_LOOP`(409), `TOO_MANY_STREAMS`(503, SSE 연결 상한), `CONTROL_WRITE_FAILED`(500), `INTERNAL_ERROR`(500) — 닫힌 집합, ADR-011 §9 와 동일(415 없음). 프레임워크 기본 `{"detail": ...}` 본문 금지(ADR-011 §9 매핑 표). 처리 순서: Host(400) → 출처·미디어 타입(403) → 라우팅(404/405) → 검증(422) → 핸들러(ADR-011 §12). 패널 `meta.error.code`: `SOURCE_MISSING`, `SOURCE_PARSE_ERROR`, `SOURCE_UNREADABLE`, `GATE_TIMEOUT`, `PROJECT_DIR_NOT_FOUND`, `SNAPSHOT_STALE`.
+에러 코드: `VALIDATION_ERROR`(422), `NOT_FOUND`(404, `/api` 아래 모르는 경로·정적 파일 없음 — SPA 폴백 없음), `METHOD_NOT_ALLOWED`(405, OPTIONS 포함 — CORS 없음), `BAD_HOST`(400), `FORBIDDEN_ORIGIN`(403, 비-JSON Content-Type 포함, SSE 교차 출처 포함), `NO_ACTIVE_LOOP`(409), `TOO_MANY_STREAMS`(503, SSE 연결 상한), `CONTROL_WRITE_FAILED`(500), `INTERNAL_ERROR`(500) — 닫힌 집합, ADR-011 §9 와 동일(415 없음). 프레임워크 기본 `{"detail": ...}` 본문 금지(ADR-011 §9 매핑 표). 처리 순서: Host(400) → 출처·미디어 타입(403, `/api/v1/events` 는 메서드 무관 출처 검사) → 라우팅(404/405) → 검증(422) → 핸들러(ADR-011 §12). 패널 `meta.error.code`: `SOURCE_MISSING`, `SOURCE_PARSE_ERROR`, `SOURCE_UNREADABLE`, `GATE_TIMEOUT`, `PROJECT_DIR_NOT_FOUND`, `SNAPSHOT_STALE`.
 
 ## 6. 배포 & 인프라
 - 환경: 사용자 PC 단일 로컬 환경(Windows / macOS / Linux). 서버·클라우드·컨테이너·DB 없음(03 §4·§6). 프로세스 1개(uvicorn, worker 1, `--host 127.0.0.1` 하드코딩), venv 는 `monitor/.venv`. 포트 기본 8765(`--port` 또는 환경변수로만 변경, 호스트는 변경 불가).

@@ -40,7 +40,7 @@ related: [NFR-002, NFR-003, CON-02, CON-05, QS-05, 02 §6, 02 §8, 03 §2, 03 §
      |-----------|------|
      | 라우트 없음 — `/api/...` 아래 모르는 경로(메서드 무관, `/api/v1` 밖의 `/api/v2/x` 포함) | 404 `NOT_FOUND` |
      | 정적 영역(`/api` 밖) GET/HEAD 에 해당 파일 없음(`/nope`, `/assets/nope.js`) | 404 `NOT_FOUND` (index.html 폴백 없음, 아래) |
-     | 경로는 있으나 메서드가 다름 — `OPTIONS` 포함(`GET /api/v1/control/pause`, `POST /api/v1/health`, `OPTIONS /api/v1/control/pause`, `PUT /`) | 405 `METHOD_NOT_ALLOWED` + `Allow` 헤더(허용 메서드), `Access-Control-*` 헤더 0개 |
+     | 경로는 있으나 메서드가 다름 — `OPTIONS` 포함(`GET /api/v1/control/pause`, `POST /api/v1/health`, `OPTIONS /api/v1/control/pause`, `PUT /`, 같은 출처 `HEAD /api/v1/events` → `Allow: GET`) | 405 `METHOD_NOT_ALLOWED` + `Allow` 헤더(허용 메서드), `Access-Control-*` 헤더 0개 |
      | `RequestValidationError` (쿼리·본문 검증, 깨진 JSON 본문 포함) | 422 `VALIDATION_ERROR` — 메시지·본문에 입력 원문 미포함(`detail`/`input` 키 금지) |
      | 그 밖 프레임워크 `HTTPException` 4xx (앱 코드에서 발생시키지 않음 — 예상 외) | 422 `VALIDATION_ERROR` |
      | 그 밖 5xx `HTTPException`, 처리되지 않은 예외 | 500 `INTERNAL_ERROR` |
@@ -54,16 +54,21 @@ related: [NFR-002, NFR-003, CON-02, CON-05, QS-05, 02 §6, 02 §8, 03 §2, 03 §
    - `websocket`: Host 값과 무관하게 **항상 거부**. 앱에 WebSocket 엔드포인트가 없다(실시간은 SSE, 03 §3). `websocket.connect` 를 받은 뒤 accept 없이 `{"type": "websocket.close", "code": 1008}` 을 보낸다(핸드셰이크 거부 — 서버가 HTTP 403 으로 응답). 프로토콜상 JSON 에러 본문을 실을 수 없으므로 2번 에러 포맷의 유일한 예외로 둔다. 내부 앱을 호출하지 않는다.
    - `lifespan`: 검사 없이 그대로 내부 앱에 넘긴다(startup/shutdown — 감시기·캐시 데우기 시작에 필요).
    - 그 밖 타입: 내부 앱을 호출하지 않고 반환한다.
-11. **SSE `GET /api/v1/events` 출처 검사 (T-025)**: 교차 출처 페이지가 `EventSource`/서브리소스로 연결을 열면 응답을 읽지 못해도 서버는 연결 끊김을 감지할 때까지(keep-alive 15초 주기) 슬롯을 잡고 있어 동시 연결 상한 8 을 소모시킬 수 있다(가용성, `TOO_MANY_STREAMS` 로 정상 대시보드가 폴링 폴백). 그래서 이 경로에 한해 슬롯을 잡기 **전에** 다음 중 하나라도 맞으면 403 `FORBIDDEN_ORIGIN`:
-   - `Origin` 헤더가 있고 5번 허용 Origin 2개와 정확히 일치하지 않음(`null` 포함). 교차 출처 `EventSource` 는 CORS 모드라 브라우저가 항상 `Origin` 을 보낸다. 같은 출처 `EventSource` 는 보내지 않거나 허용값을 보낸다.
-   - `Sec-Fetch-Site` 헤더가 있고 값이 `same-origin`·`none` 이 아님(`cross-site`, `same-site`). `<img src>` 같은 no-cors 서브리소스 요청은 `Origin` 을 보내지 않으므로 이 헤더로 막는다.
+11. **SSE `/api/v1/events` 출처 검사 (T-025, security 리뷰 반영)**: 교차 출처 페이지가 `EventSource`/서브리소스로 연결을 열면 응답을 읽지 못해도 서버는 연결 끊김을 감지할 때까지(keep-alive 15초 주기) 슬롯을 잡고 있어 동시 연결 상한 8 을 소모시킬 수 있다(가용성, `TOO_MANY_STREAMS` 로 정상 대시보드가 폴링 폴백).
+   - **허용 메서드는 `GET` 하나**: `HEAD` 를 포함한 그 밖 모든 메서드는 405 `METHOD_NOT_ALLOWED` + `Allow: GET`(9번 표). 스트림 핸들러(슬롯 획득)에 닿는 메서드는 `GET` 뿐이다. 근거: `HEAD` 를 허용하면 `StreamingResponse` 가 HEAD 에도 제너레이터를 돌려 슬롯을 잡을 수 있고, 교차 출처 `fetch(..., {method:"HEAD", mode:"no-cors"})` 는 단순 요청이라 막히지 않는다. 대시보드는 `EventSource`(GET)만 쓰므로 HEAD 가 필요 없다(03 §2 보안 2순위·원칙 3). Starlette `Route` 는 GET 에 HEAD 를 자동 추가하므로 backend 는 이 경로에서 HEAD 가 405 가 되도록 등록한다(방식은 backend, 결과가 계약).
+   - **검사 범위는 경로 기준, 메서드 무관**: 요청 경로가 정확히 `/api/v1/events` 이면 메서드와 관계없이(GET·HEAD·POST·OPTIONS 등) 아래 검사를 라우팅(404/405)과 슬롯 획득 **전에** 수행한다. 따라서 이 경로에서는 403 출처 검사가 405 보다 먼저다(교차 출처 HEAD → 403, 같은 출처 HEAD → 405). 비-GET·HEAD·OPTIONS 메서드는 5번 쓰기 가드도 함께 적용된다(어느 쪽이 거부해도 403 `FORBIDDEN_ORIGIN`).
+   - 다음 중 하나라도 맞으면 403 `FORBIDDEN_ORIGIN`:
+     - `Origin` 헤더가 **2개 이상**(Host·Content-Type 과 같은 규칙 — `scope["headers"]` 에서 계수).
+     - `Sec-Fetch-Site` 헤더가 **2개 이상**.
+     - `Origin` 헤더가 1개이고 5번 허용 Origin 2개와 정확히 일치하지 않음(`null` 포함, 비교는 5번과 같음). 교차 출처 `EventSource` 는 CORS 모드라 브라우저가 항상 `Origin` 을 보낸다. 같은 출처 `EventSource` 는 보내지 않거나 허용값을 보낸다.
+     - `Sec-Fetch-Site` 헤더가 1개이고 그 값을 `strip()`·소문자화한 문자열이 `same-origin` 또는 `none` 과 **정확히 일치**하지 않음(`cross-site`, `same-site`, 빈 값, `same-origin, none` 같은 목록 포함 — `startswith`/`in` 비교 금지). `<img src>` 같은 no-cors 서브리소스 요청은 `Origin` 을 보내지 않으므로 이 헤더로 막는다.
    - 두 헤더가 모두 없으면(curl 등 비브라우저, 구형 브라우저) 통과 — 잔여 위험으로 수용(상한 8 과 끊김 감지로 한정).
-   - 순서: Host(400) → 이 검사(403) → 상한 검사(503) → 스트림 시작. 403 응답은 스트림이 아닌 JSON 에러 본문이다.
+   - 순서(이 경로): Host(400) → 이 검사(403) → 라우팅(405, GET 아님) → 상한 검사(503) → 스트림 시작. 400·403·405 응답은 스트림이 아닌 JSON 에러 본문이며 **슬롯을 소모하지 않는다**(슬롯은 GET 핸들러 안에서 상한 검사를 통과할 때만 획득).
    - **다른 GET(조회 API·정적 dist)에는 적용하지 않는다**: 응답 읽기는 SOP 가 막고, 요청은 짧게 끝나며 mtime 캐시로 비용이 한정된다. no-cors GET 은 `Origin` 을 보내지 않아 Origin 검사로는 실효가 없고, 조회 API 는 읽기 전용(원칙 2)이라 무결성 위험이 없다. 단순함 유지(03 §2 개발 속도 1순위·원칙 3).
 12. **처리 순서 (T-025, 모든 HTTP 요청 공통)** — 앞 단계에서 거부되면 뒤 단계는 실행되지 않는다:
    1. scope 분기(10번) — `lifespan` 통과, `websocket` 거부
    2. Host 가드(4번) → 400 `BAD_HOST`
-   3. 출처·미디어 타입 가드(5번 쓰기 가드, 11번 SSE 출처) → 403 `FORBIDDEN_ORIGIN`
+   3. 출처·미디어 타입 가드(5번 쓰기 가드, 11번 SSE 출처 — `/api/v1/events` 경로는 메서드 무관) → 403 `FORBIDDEN_ORIGIN`. 그래서 `/api/v1/events` 에서는 403 출처 검사가 405 보다 먼저다
    4. 라우팅(9번 표) → 404 `NOT_FOUND` / 405 `METHOD_NOT_ALLOWED`
    5. 입력 검증 → 422 `VALIDATION_ERROR`
    6. 핸들러 → 200 / 409 `NO_ACTIVE_LOOP` / 503 `TOO_MANY_STREAMS` / 500 `CONTROL_WRITE_FAILED`·`INTERNAL_ERROR`
@@ -84,9 +89,10 @@ related: [NFR-002, NFR-003, CON-02, CON-05, QS-05, 02 §6, 02 §8, 03 §2, 03 §
 - (+) 로컬 웹 공격면 축소(QS-05).
 - (−) 모든 조회 모델이 봉투 제네릭을 가져야 해 Pydantic 모델이 약간 장황 → `Envelope[T]` 제네릭 하나로 통일.
 - (−) Host 가드가 포트까지 보므로 서버가 실제 바인딩 포트를 설정으로 정확히 받아야 한다(런처·config 책임, 4번 "포트 단일 출처").
-- 테스트(qa): privacy.md §5.1 H-01~H-22·§5.2 C-01~C-11 전 케이스, 422 변환, 9번 매핑 표 예시(404·405·OPTIONS, 본문에 `detail` 키 0건), websocket scope 거부·lifespan 통과(ASGI scope 직접 구성), SSE 교차 출처(`Origin: http://evil.example`, `Sec-Fetch-Site: cross-site`) 403 이 슬롯을 소모하지 않음, 12번 순서(예: 잘못된 Host + 모르는 경로 → 400, `text/plain` + 깨진 본문 → 403), 패널 오류 격리, SSE 상한 초과 503 `TOO_MANY_STREAMS`, 응답에 경로·ID 문자열 미포함.
+- 테스트(qa): privacy.md §5.1 H-01~H-22·§5.2 C-01~C-11 전 케이스, 422 변환, 9번 매핑 표 예시(404·405·OPTIONS, 본문에 `detail` 키 0건), websocket scope 거부·lifespan 통과(ASGI scope 직접 구성), SSE 교차 출처(`Origin: http://evil.example`, `Sec-Fetch-Site: cross-site`, `Origin`·`Sec-Fetch-Site` 복수, `Sec-Fetch-Site: Same-Origin` 통과) 403 과 `/api/v1/events` 의 HEAD·POST 405(`Allow: GET`)·교차 출처 HEAD 403 이 슬롯을 소모하지 않음(실제 슬롯 카운트로 측정 — T-011), 12번 순서(예: 잘못된 Host + 모르는 경로 → 400, `text/plain` + 깨진 본문 → 403), 패널 오류 격리, SSE 상한 초과 503 `TOO_MANY_STREAMS`, 응답에 경로·ID 문자열 미포함.
 - (−) 에러 코드가 9개로 늘어(`METHOD_NOT_ALLOWED`) 프론트·OpenAPI 의 에러 코드 enum 이 함께 바뀐다(추가만 — 하위 호환).
 
 ## 변경 이력
 - 2026-10-23 T-021: §4 Host 가드 포트 검사 확정(자체 ASGI 미들웨어), §5 비-JSON Content-Type → 403 `FORBIDDEN_ORIGIN` 명시(D-14), §9 에러 코드 집합에 `TOO_MANY_STREAMS`(503) 추가(I-02 중 에러 코드 부분).
 - 2026-10-23 T-025 (I-14): §9 에 `METHOD_NOT_ALLOWED`(405) 추가와 프레임워크 기본 오류 매핑 표(404·405·OPTIONS·422·500, `detail` 본문 금지, 정적 모르는 경로 404·SPA 폴백 없음), §10 ASGI scope 처리(websocket 거부·lifespan 통과), §11 SSE GET 출처 검사(Origin·Sec-Fetch-Site → 403, 슬롯 소모 방지, 다른 GET 미적용), §12 처리 순서, §4 Host 개수 1개·정확 일치로 선행 0·userinfo·추가 세그먼트 거부, §5 쓰기 가드 범위(GET/HEAD/OPTIONS 외 전 메서드)·미디어 타입 대소문자 무시 정확 일치·422/404 보다 먼저 403. 케이스 정의는 privacy.md §5.1·§5.2 참조(D-25).
+- 2026-10-23 T-025 (security 리뷰 FAIL 조치): §11 `/api/v1/events` 허용 메서드를 GET 하나로 확정(HEAD 포함 그 밖 405 + `Allow: GET` — sse-events.md §1 의 "GET·HEAD 허용" 과의 불일치로 생긴 HEAD 슬롯 우회 차단), 출처 검사를 메서드 무관 경로 기준으로 라우팅·슬롯 획득 전에 적용(이 경로는 403 이 405 보다 먼저), `Origin`·`Sec-Fetch-Site` 복수 헤더 거부, `Sec-Fetch-Site` strip·소문자 정확 일치, 400/403/405 슬롯 미소모 명시. §12 3단계 주석, Consequences 테스트 항목 갱신.
