@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "aidlc-monitor/contracts/control.schema.json",
+  "title": "Loop control request file (.control.json)",
+  "description": "workspace/memory/.control.json. Single writer = dashboard backend (services/control.py, POST /api/v1/control/pause|resume). Reader = loop control CLI (aidlc.py loop-start/loop-check/wait-resume). Written atomically (temp file in the same directory -> os.replace), UTF-8, no BOM. Any violation of this schema is treated by the CLI as 'control file broken' (exit 2). ADR-004 §1, 20 §5 F4.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "seq", "state", "requested_at", "max_pause_sec"],
+  "properties": {
+    "schema": {
+      "description": "Contract version. Bumped only on a breaking change.",
+      "const": 1
+    },
+    "seq": {
+      "description": "Monotonic request counter. Every write (pause or resume, including idempotent re-writes) sets seq = previous seq + 1. First write = 1. If the existing file is missing or broken the writer treats previous seq as 0.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "description": "User intent. 'pause' = stop at the next cycle boundary and wait; 'running' = resume / do not pause.",
+      "enum": ["running", "pause"]
+    },
+    "requested_at": {
+      "description": "Time of this write. RFC 3339, timezone-aware UTC, second precision (e.g. 2026-10-23T07:36:23+00:00).",
+      "type": "string",
+      "format": "date-time"
+    },
+    "max_pause_sec": {
+      "description": "Maximum length of one pause episode in seconds (measured from loop-status.paused_since). Default 7200. On a resume write the writer keeps the previous value.",
+      "type": "integer",
+      "minimum": 600,
+      "maximum": 86400,
+      "default": 7200
+    }
+  },
+  "examples": [
+    {"schema": 1, "seq": 7, "state": "pause", "requested_at": "2026-10-23T08:00:00+00:00", "max_pause_sec": 7200},
+    {"schema": 1, "seq": 8, "state": "running", "requested_at": "2026-10-23T08:40:12+00:00", "max_pause_sec": 7200}
+  ]
+}
