@@ -39,9 +39,24 @@ python3 aidlc/scripts/aidlc.py loop-end <done|blocked|no_task> [--done <done>]
 |----------------------|-----------|
 | 없음 | `seq = 0`, `state = running` (정상, 경고 없음) |
 | JSON 오류 / UTF-8 아님 / `control.schema.json` 위반(`schema ≠ 1`, 범위 밖 `max_pause_sec` 포함) | **broken** |
+| 정수 필드(`schema`·`seq`·`max_pause_sec`)가 아래 "엄격 정수" 판정에 실패(bool, `7.0`, `7e0`, `NaN`/`Infinity`, 범위 밖, 4300자리 초과 리터럴) | **broken** |
 | 정상 | 파일 값 |
 
 `max_pause_sec` 는 판독 시점의 제어 파일 값을 쓴다(없거나 broken 이면 7200).
+
+**엄격 정수 판정 (CLI·대시보드 공통, 같은 술어)**
+```
+SEQ_MAX = 9007199254740991            # 2^53 - 1 (JS Number 안전 정수, 프론트 표시 정밀도 보장)
+is_strict_int(x, lo, hi) = type(x) is int and lo <= x <= hi
+  seq:           lo = 1, hi = SEQ_MAX     (control.schema.json)
+  baseline_seq:  lo = 0, hi = SEQ_MAX     (loop-status.schema.json)
+  max_pause_sec: lo = 600, hi = 86400
+```
+- 정수는 **JSON 정수 리터럴만** 받는다. `true`/`false`(Python `bool` 은 `int` 하위형이라 `isinstance` 로는 통과 — 금지, `type(x) is int` 를 쓴다), `7.0`·`7e0`·`7E+0`(Python `json` 은 float 로 파싱) 은 거부한다.
+- JSON Schema 2020-12 의 `"type": "integer"` 는 `7.0` 을 정수로 통과시키므로 **스키마 검증만으로는 부족하다**. 스키마 `maximum` 과 위 술어를 함께 적용한다(CLI 는 표준 라이브러리만 쓰므로 술어가 곧 검증, 대시보드는 jsonschema/Pydantic 검증 뒤 같은 술어를 추가로 적용).
+- `NaN`/`Infinity`/`-Infinity` 는 `json.loads(..., parse_constant=<예외 발생>)` 로 거부한다.
+- Python 의 정수 문자열 변환 상한(`sys.int_info.str_digits_check_threshold`, 기본 4300자리)을 넘는 리터럴은 `json.loads` 가 `ValueError` 를 낸다. 판독기는 `parse_int` 훅으로 숫자 문자열 길이를 먼저 검사(16자리 초과면 범위 밖으로 거부)하거나 `ValueError` 를 잡아 **broken** 으로 처리한다 — 예외가 밖으로 나가 500·exit 1 이 되면 안 된다.
+- 범위 밖: `.control.json` 이면 **broken**, `loop-status.json` 의 `baseline_seq` 이면 대시보드는 baseline **0** 으로 본다(§7.1). CLI 가 자기 파일을 다시 읽을 때(loop-check 등) loop-status 가 이 판정에 실패하면 "활성 루프 없음"(§3.2) 과 같다.
 
 ## 3. 서브커맨드
 ### 3.1 `loop-start <N>`
@@ -121,6 +136,8 @@ next_seq = max(prev, baseline) + 1
 - `ended` 인 loop-status 의 baseline 도 그대로 쓴다(값이 커질 뿐 해가 없음). loop-status 가 없거나 깨졌으면 활성 루프가 없다는 뜻이고(§3.2 `NO_LOOP`), pause 는 409 로 쓰지 않으며 resume 이 쓴 seq 는 다음 `loop-start` 의 baseline 이 될 뿐이다.
 - 대시보드는 `loop-status.json` 을 **읽기만** 한다(이미 `GET /control` 의 읽기 대상). 파일별 작성자는 그대로다(R-10, D-04).
 - `max_pause_sec`: pause 는 요청 본문 값(기본 7200), resume 은 `prev` 가 정상일 때 그 값을 유지하고 아니면 7200.
+- `prev`·`baseline` 판독은 §2.1 엄격 정수 판정을 따른다: `.control.json` 이 판정에 실패하면 broken → `prev = 0`, `loop-status.json` 이 스키마 또는 판정에 실패하면 `baseline = 0`. 손상 입력 때문에 예외가 나거나 500 이 고착되지 않는다.
+- **상한 초과**: 계산한 `next_seq > SEQ_MAX`(2^53−1) 이면 **쓰지 않는다** — 기존 파일 그대로, 500 `CONTROL_WRITE_FAILED`. 정상 사용(초당 1회 쓰기로도 2억 년 이상)에서는 도달하지 않고, 수동 편집으로 상한 근처 값이 들어간 경우에만 생긴다. 복구는 사용자가 제어 파일을 지우는 것(그래도 baseline 이 상한이면 다음 `loop-start` 후 해소).
 
 ### 7.2 CLI 쪽 규칙 (변경 없음, 명시)
 - CLI 판정은 매 판독마다 `(control.seq > baseline_seq, control.state)` 만 본다. 이전에 본 seq 를 기억하거나 "seq 가 바뀌었는지" 로 판정하지 않는다 → 제어 파일 재생성으로 같은 seq 값이 다시 쓰여도(예: 삭제 전 8, 재생성 후 8) 판정이 맞다.
@@ -134,7 +151,10 @@ next_seq = max(prev, baseline) + 1
 | 대시보드 POST 두 개가 동시에 도착 | 대시보드 프로세스(단일 프로세스, ADR-001) 안의 **락 하나**로 "두 파일 읽기 → next_seq 계산 → 쓰기" 전체를 직렬화한다. 두 요청은 서로 다른 연속 seq 를 받고, 파일에는 나중 요청이 남는다(최신 요청 우선) |
 | CLI 가 loop-status 를 쓰는 중 대시보드가 baseline 을 읽음 | CLI 도 원자적 교체 → 이전/새 파일 중 하나. 루프 도중 `baseline_seq` 는 바뀌지 않으므로 어느 쪽이든 같은 값 |
 | POST 와 `loop-start` 가 거의 동시 | `loop-start` 가 제어 파일을 읽기 **전**에 쓰인 요청은 이번 루프의 baseline 이하 → 무시(루프 시작 전 요청, AC-12 와 같은 의미). 읽은 **후**에 쓰인 요청은 `next_seq ≥ 그 시점 seq + 1 > baseline` → 적용. 어느 순서든 파일 단일 작성자·seq 단조성은 유지 |
-| Windows 에서 읽는 쪽이 파일을 연 순간 `os.replace` 가 `PermissionError` | 쓰는 쪽이 짧게 재시도(권고: 최대 5회, 50 ms 간격). 대시보드는 끝내 실패하면 500 `CONTROL_WRITE_FAILED`(AC-20, 기존 파일 보존). CLI 는 §2 대로 경고만 |
+| Windows 에서 읽는 쪽이 파일을 연 순간 `os.replace` 가 `PermissionError` | 쓰는 쪽이 짧게 재시도(최대 5회, 50 ms 간격 — 락 보유 시간 상한 약 0.3 s). 대시보드는 끝내 실패하면 500 `CONTROL_WRITE_FAILED`(AC-20, 기존 파일 보존). CLI 는 §2 대로 경고만 |
+| POST 연타(수십 개 동시) | 락 획득은 **타임아웃 2 s**(`threading.Lock.acquire(timeout=2.0)`, 무한 대기 금지). 시간 안에 못 얻으면 쓰지 않고 500 `CONTROL_WRITE_FAILED`. 락 안에서 하는 일은 "두 파일 읽기 → 계산 → 임시 파일 쓰기 → `os.replace`(재시도 포함)" 뿐이고 sleep·네트워크·SSE 대기를 하지 않는다 → 락 보유 상한 ≈ 재시도 상한(0.3 s) + 파일 I/O. 락은 `with`/`try-finally` 로 반드시 해제(예외 경로 포함). 동기 핸들러는 스레드풀에서 돌므로 요청 하나의 지연 상한 ≈ 2 s + 보유 상한 |
+| 쓰기 실패 정리 | 어떤 실패(락 타임아웃 제외 — 그때는 아무것도 만들지 않음)든 이번 요청이 만든 임시 파일을 `finally` 에서 삭제한다(`os.unlink`, 이미 없으면 무시). 기존 `.control.json` 은 바뀌지 않는다. 임시 파일 이름은 고정 접두어(예: `.control.json.<random>.tmp`)로 같은 디렉터리에 만든다 |
+| 실패 응답 내용 | 500 `CONTROL_WRITE_FAILED` 의 `message` 는 **고정 문자열**("제어 파일을 쓰지 못했습니다. 잠시 후 다시 시도하세요." 등 구현이 한 번 정한 값). 파일 경로·예외 메시지·errno·스택을 응답에 넣지 않는다(02 §7). 원인은 콘솔 로그에 예외 종류만 남긴다. 에러 코드는 D-26 닫힌 9개 집합 안의 `CONTROL_WRITE_FAILED` 하나만 쓴다(새 코드 추가 없음) |
 | 대시보드 프로세스가 2개 이상 | 계약 범위 밖(ADR-001 이 중복 실행을 막음). 이 경우 락이 공유되지 않아 seq 중복이 가능하다 |
 
 ### 7.4 테스트 시나리오 (T-008 이 그대로 테스트로 옮긴다)
@@ -157,6 +177,12 @@ next_seq = max(prev, baseline) + 1
 | SQ-13 | running, control seq 3(수동 편집으로 baseline 7 보다 작음) | POST pause → `loop-check 1` | 파일 `seq 8, pause` → exit 10 |
 | SQ-14 | loop-start 시 제어 파일 broken (baseline 0, exit 2) | POST pause → `loop-check 1` | 파일 `seq 1, pause` → exit 10 |
 | SQ-15 | 모든 SQ | - | CLI 는 `.control.json` 을 만들거나 고치지 않음(mtime·내용 불변), 대시보드는 `loop-status.json` 을 쓰지 않음(R-10) |
+| SQ-16 | control seq 9 `running`, loop-status `baseline_seq` 를 각각 `-1` / `"7"` / `true` / `7.0` / `9007199254740992`(상한+1) / 4301자리 정수 / 스키마 위반(필드 누락)으로 교체 | POST resume, 이어서 POST pause | 각 경우 baseline = 0, 예외·고착 500 없음. resume → 파일 `seq 10, running`(schema·엄격 정수 통과, `10.0` 아님). loop-status 가 깨짐 = 활성 루프 없음이므로 pause → 409 `NO_ACTIVE_LOOP`, 파일 무변경(§7.1) |
+| SQ-17 | 활성 루프, `.control.json` 의 `seq` 를 각각 `7.0` / `true` / `9007199254740992` / `8e0` / 4301자리 정수로 교체 | `loop-check 1` → POST pause → `loop-check 1` | 첫 호출 exit 2 `CONTROL_BROKEN`(CLI 술어). POST 는 prev = 0 → 파일 `seq 8, pause` → exit 10. 대시보드 `GET /control` 도 같은 파일을 broken 으로 판정(CLI 와 판정 일치) |
+| SQ-18 | 활성 루프, `baseline_seq = 9007199254740991`(상한), 제어 파일 없음 | POST pause | 쓰지 않음(파일 없음 유지), 500 `CONTROL_WRITE_FAILED`, 고정 message, 임시 파일 없음 |
+| SQ-19 | running, control seq 9 | POST pause/resume 50개 동시(스레드) | 모든 응답이 200 또는 500 `CONTROL_WRITE_FAILED`(락 타임아웃) 중 하나, 각 응답 ≤ 2.5 s. 성공한 요청의 seq 는 서로 다르고 연속(10 부터), 최종 파일 seq = 성공 수 + 9, schema 통과. 끝난 뒤 락이 풀려 있음(다음 POST 즉시 200), 임시 파일 없음 |
+| SQ-20 | control seq 9 `running` | `os.replace` 가 매번 `PermissionError` 를 내도록 주입 → POST pause | 5회 재시도 후 500 `CONTROL_WRITE_FAILED`. 기존 파일 내용·mtime 불변, 디렉터리에 임시 파일 남지 않음, 응답 본문에 경로·예외문 없음(고정 message). 다음 POST(주입 해제)는 즉시 200 `seq 10` |
+| SQ-21 | 락 획득 타임아웃 주입(다른 스레드가 락 보유) | POST pause | 2 s 뒤 500 `CONTROL_WRITE_FAILED`, 파일·디렉터리 불변(임시 파일 생성 안 함) |
 
 ## 8. 상태 전이
 ```
@@ -179,4 +205,4 @@ running|paused --loop-end--> ended(reason)
 - `--max-wait` 기본 540 은 Bash 600 s 상한 아래 여유를 둔 값. R-01 스파이크에서 실질 상한이 낮으면 스킬 쪽 인자만 낮춘다(예: `--max-wait 50`) — 계약 변경 아님.
 
 ## 10. 테스트 기준 (qa / backend)
-- 상태 전이 표 전체, exit code 5종(0/10/20/2/64), `baseline_seq` 로 오래된 pause 무시, §7.4 SQ-1~SQ-15(제어 파일 삭제·손상 후 복구, 대시보드 재시작, 연속 POST), 같은 루프 재일시정지, `paused_since` 누적(반복 호출), 상한 초과, max-wait 반환, 제어 파일 없음/깨짐/스키마 위반, 쓰기 결과가 `loop-status.schema.json` 에 맞음, CLI 가 `.control.json` 을 절대 쓰지 않음, 시간 주입(시계·sleep 대체)으로 빠르게 실행.
+- 상태 전이 표 전체, exit code 5종(0/10/20/2/64), `baseline_seq` 로 오래된 pause 무시, §7.4 SQ-1~SQ-21(제어 파일 삭제·손상 후 복구, 대시보드 재시작, 연속 POST, 엄격 정수·상한, POST 연타, 쓰기 재시도 소진), 같은 루프 재일시정지, `paused_since` 누적(반복 호출), 상한 초과, max-wait 반환, 제어 파일 없음/깨짐/스키마 위반, 쓰기 결과가 `loop-status.schema.json` 에 맞음, CLI 가 `.control.json` 을 절대 쓰지 않음, 시간 주입(시계·sleep 대체)으로 빠르게 실행.

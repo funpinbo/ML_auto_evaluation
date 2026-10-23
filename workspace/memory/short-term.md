@@ -26,6 +26,8 @@ opened_at: 2026-10-23T18:49:49+00:00
 - 대안 비교: (a) 대시보드가 `max(prev, loop-status.baseline_seq)+1` / (b) CLI 가 broken·없음 뒤에는 변경만으로 새 요청 판정 / (c) 시각 기반 id. (a) 채택 — 수정 1곳(대시보드), CLI·스키마 구조 무변경, D-04 유지(loop-status 는 읽기만). (b) 는 CLI 상태 저장(스키마 변경)·"없음" 정상 상태와 모호·1초 tick 사이 변화 누락, (c) 는 벽시계 비단조로 기각. "loop-status last-seen seq" 항목은 CLI 판정이 baseline 만 쓰므로 불필요(새 필드 = 스키마 변경)라 넣지 않음.
 - contracts/loop-cli.md §7 재작성(7.1 발급 규칙, 7.2 CLI 규칙 명시, 7.3 경쟁 조건, 7.4 시나리오 SQ-1~SQ-15), §10 테스트 기준에 SQ 추가. control.schema.json `seq` 설명 갱신(JSON 파싱 확인). ADR-004 Decision 1.1, Alternatives F·G, Consequences, 변경 이력 추가.
 - `python3 aidlc/scripts/aidlc.py check project` → GATE PASS.
+- (security FAIL 조치 1회차) control.schema `seq`·loop-status.schema `baseline_seq` 에 `maximum: 9007199254740991` 추가(iterations_*·max_pause_sec 는 이미 상한 있음). loop-cli §2.1 엄격 정수 판정(`type(x) is int` + 범위, CLI·대시보드 공통, NaN 거부, 4300자리 ValueError → broken), §7.1 상한 초과 시 미기록 + 500 CONTROL_WRITE_FAILED, §7.3 락 타임아웃 2 s·락 안 작업 한정·임시 파일 삭제·고정 message(D-26 집합 안), §7.4 SQ-16~SQ-21, §10 갱신. ADR-004 Decision 1.1·변경 이력 갱신.
+- 검증: monitor/.venv jsonschema(Draft 2020-12) check_schema 통과, examples 유효. 음성: seq 0/-1/2^53/true/"7"/1e20 거부, baseline -1/2^53/true/"7" 거부. `7.0` 은 두 스키마 모두 통과(확인) → 술어 필수 근거. 술어+parse_int(16자리 초과 거부) 데모: 7.0·8e0·true·2^53·4301자리 모두 거부/broken. `aidlc.py check project` 재실행.
 
 ## 4. 발견 사항 (LTM 후보)
 - 결정: I-16 해결 — 대시보드 `next_seq = max(prev(없음/broken 0), loop-status.baseline_seq(없음/깨짐 0)) + 1`, 매 쓰기마다 두 파일 재판독(메모리 캐시 없음) + 프로세스 내 락으로 읽기-계산-쓰기 직렬화. CLI 판정은 `(seq > baseline_seq, state)` 만, 이전 seq 기억 안 함(재생성 파일의 seq 재사용 허용). 원칙 2·D-04·R-10 유지 (ADR-004 Decision 1.1, loop-cli §7)
@@ -40,7 +42,7 @@ opened_at: 2026-10-23T18:49:49+00:00
 - [backend] T-008: 위 보강을 `services/control.py`·CLI 판독(`type(x) is int` + 범위 검사, dashboard/CLI 동일 판정)에 반영하고 추가 SQ 를 테스트로 옮긴다 — T-026 security 리뷰
 
 ## 6. 결과 & 인수인계
-- 산출물(파일/PR): workspace/project/contracts/loop-cli.md (§7 재작성, §10), workspace/project/contracts/control.schema.json (`seq` description), workspace/project/adr/ADR-004-loop-control.md (Decision 1.1, Alternatives F·G, Consequences, 변경 이력)
+- 산출물(파일/PR): workspace/project/contracts/loop-cli.md (§2.1 엄격 정수, §7 재작성·SQ-16~21, §10), workspace/project/contracts/loop-status.schema.json (`baseline_seq` maximum), workspace/project/contracts/control.schema.json (`seq` description, maximum 2^53-1), workspace/project/adr/ADR-004-loop-control.md (Decision 1.1, Alternatives F·G, Consequences, 변경 이력)
 - 검증 결과: `python3 aidlc/scripts/aidlc.py check project` GATE PASS. control.schema.json `json.loads` 정상. 계약 하위 호환: 파일 형식·필드·`schema` 값·CLI exit code/stdout 무변경, 바뀐 것은 대시보드 seq 계산(정상 경로에서는 기존 `prev+1` 과 동일). 코드 변경 없음 → 테스트 실행 대상 없음
 - 남은 일: §5 [product] AC-18 문구 갱신, [backend] T-008 에서 §7.1 구현·SQ-1~SQ-15 테스트. LTM I-16 은 "해결(ADR-004 Decision 1.1)" 로 갱신 후보
 
