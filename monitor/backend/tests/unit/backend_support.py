@@ -185,12 +185,15 @@ def asgi_http(app: Any, scope: dict[str, Any], body: bytes = b"") -> RawResponse
 # 가드는 라우팅보다 바깥이라 거부 케이스는 실제 라우트와 무관하게 성립한다. 통과 케이스가 "가드를 지나
 # 핸들러에 닿았다"를 보이도록 같은 경로·메서드의 대역 라우트를 뒤에 붙인다. 실제 라우트가 생기면
 # 먼저 등록된 실제 라우트가 매치되므로 대역은 가려지고 같은 테스트가 실제 라우트를 검증한다.
+# control(T-008)은 실제 라우트가 생겨 대역에서 뺐다 — 통과 기대값은 "400/403/422 아님"(I-25):
+# 활성 루프가 없으면 pause 409 `NO_ACTIVE_LOOP`, resume 200(멱등). `PASS_STATUS_NO_LOOP` 참조.
 STUB_TARGETS = (
     ("/api/v1/health", "GET"),
-    ("/api/v1/control/pause", "POST"),
-    ("/api/v1/control/resume", "POST"),
     ("/api/v1/events", "GET"),
 )
+PASS_STATUS_NO_LOOP = {"/api/v1/control/pause": 409, "/api/v1/control/resume": 200}
+CONTROL_REL = "workspace/memory/.control.json"
+GUARD_REJECT_STATUSES = (400, 403, 422)
 
 
 class StubBody(BaseModel):

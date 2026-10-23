@@ -13,6 +13,7 @@ from fastapi import Request
 from app.errors import ErrorCode
 from app.models.envelope import SourceErrorCode
 from app.models.errors import ErrorResponse
+from app.services.control import ControlService
 from app.services.gates import GateService
 from app.services.memory import MemoryService
 from app.services.panel import Panel
@@ -49,6 +50,7 @@ class Services:
     tasks: TasksService
     memory: MemoryService
     gates: GateService
+    control: ControlService
     clock: Callable[[], datetime]
 
 

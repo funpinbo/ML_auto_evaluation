@@ -26,9 +26,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from app.models.control import ControlData, ScreenState
+from app.models.control import ControlData, ScreenState, ViewId
 from app.models.envelope import SourceErrorCode
-from app.services.panel import Panel, iso_utc
+from app.services.panel import Panel
 
 log = logging.getLogger("aidlc_monitor.control")
 
@@ -77,7 +77,9 @@ MSG_LOOP_BROKEN = "루프 상태를 읽을 수 없음"
 MSG_NO_LOOP = "실행 중인 루프가 없습니다"
 
 
-def ended_message(reason: str | None, total: int, remaining: int, max_pause: int) -> str | None:
+def ended_message(
+    reason: str | None, total: int, remaining: int, max_pause: int
+) -> str | None:
     if reason == "done":
         return f"완료 — {total}회 반복을 모두 마쳤습니다"
     if reason == "blocked":
@@ -264,7 +266,7 @@ class ControlWriteFailed(Exception):
 
 
 # ------------------------------------------------------------------ 서비스
-_STATE_TO_VIEW: dict[str, str] = {
+_STATE_TO_VIEW: dict[str, ViewId] = {
     "running": "V3",
     "pause_requested": "V2",
     "paused": "V4",
@@ -358,7 +360,9 @@ class ControlService:
                 .isoformat(),
                 "max_pause_sec": limit,
             }
-            if not valid_control(doc):  # 작성자 검증 (범위 밖 max_pause_sec 등 — 라우터가 먼저 막는다)
+            if not valid_control(
+                doc
+            ):  # 작성자 검증 (범위 밖 max_pause_sec 등 — 라우터가 먼저 막는다)
                 raise ControlWriteFailed
             self._atomic_write(doc)
         finally:
@@ -433,9 +437,9 @@ def build_view(ctl: ControlFile, loop: LoopFile, now: datetime) -> ControlData:
     can_pause, can_resume = _BUTTONS[view]
     doc = loop.doc
     limit = ctl.max_pause_sec if ctl.ok else MAX_PAUSE_DEFAULT
-    total = doc["iterations_total"] if doc else None
-    done = doc["iterations_done"] if doc else None
-    remaining = (total - done) if doc else None
+    total: int | None = doc["iterations_total"] if doc else None
+    done: int | None = doc["iterations_done"] if doc else None
+    remaining = total - done if total is not None and done is not None else None
     paused_since = doc["paused_since"] if doc else None
     elapsed = _age(now, paused_since) if doc and doc["state"] == "paused" else None
     hint: str | None = None
@@ -451,8 +455,10 @@ def build_view(ctl: ControlFile, loop: LoopFile, now: datetime) -> ControlData:
         hint=hint,
         can_pause=can_pause,
         can_resume=can_resume,
-        requested_state=ctl.state if ctl.ok else None,
-        requested_at=iso_utc(parse_ts(ctl.requested_at)) if ctl.ok and ctl.requested_at else None,
+        requested_state=("pause" if ctl.state == "pause" else "running")
+        if ctl.ok
+        else None,
+        requested_at=ctl.requested_at if ctl.ok else None,
         control_seq=ctl.seq if ctl.ok else None,
         baseline_seq=doc["baseline_seq"] if doc else None,
         control_file=ctl.status,

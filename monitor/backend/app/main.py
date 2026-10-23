@@ -19,6 +19,7 @@ from fastapi import APIRouter, FastAPI
 from starlette.types import Receive, Scope, Send
 
 from app import APP_NAME, __version__
+from app.api import control as control_api
 from app.api import memory as memory_api
 from app.api import pipeline as pipeline_api
 from app.api import tasks as tasks_api
@@ -27,6 +28,7 @@ from app.config import Settings
 from app.errors import install_error_handlers
 from app.security import wrap_guards
 from app.services.aidlc_reader import HookLoader
+from app.services.control import ControlService
 from app.services.gates import GateService, Runner, subprocess_runner
 from app.services.memory import MemoryService
 from app.services.pipeline import PipelineService
@@ -34,6 +36,13 @@ from app.services.tasks import TasksService
 from app.static_files import StaticFallback
 
 API_PREFIX = "/api/v1"
+TELEMETRY_OFF: Any = {
+    "tracing": False,
+    "metrics": False,
+    "logs": False,
+    "operation_spans": False,
+    "auto_configure": False,
+}
 log = logging.getLogger("aidlc_monitor")
 
 
@@ -89,6 +98,8 @@ def create_app(
         openapi_url=None,
         redirect_slashes=False,
         generate_unique_id_function=lambda route: route.name,
+        # I-24: 사용자 OTEL_*·FASTAPI_OTEL_AUTO_CONFIGURE 환경과 무관하게 네이티브 텔레메트리를 끈다.
+        telemetry=TELEMETRY_OFF,
     )
     install_error_handlers(app)
 
@@ -100,6 +111,7 @@ def create_app(
         tasks=TasksService(root, loader),
         memory=MemoryService(root, loader, clock),
         gates=gates,
+        control=ControlService(root, clock),
         clock=clock,
     )
 
@@ -107,6 +119,7 @@ def create_app(
     api.include_router(pipeline_api.router)
     api.include_router(tasks_api.router)
     api.include_router(memory_api.router)
+    api.include_router(control_api.router)
     health = _optional_module("app.api.health")
     if health is not None and hasattr(health, "router"):
         api.include_router(health.router)

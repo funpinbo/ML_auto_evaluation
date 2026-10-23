@@ -280,6 +280,244 @@
         }
       }
     },
+    "/api/v1/control": {
+      "get": {
+        "tags": [
+          "control"
+        ],
+        "summary": "루프 제어 화면 상태 (.control.json + loop-status.json 조합)",
+        "description": "loop-status 없음 = `meta.status=empty`, 깨짐 = `error`, 제어 파일 깨짐 = `partial`.",
+        "operationId": "get_control",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ControlData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/control/pause": {
+      "post": {
+        "tags": [
+          "control"
+        ],
+        "summary": "일시정지 요청 (.control.json state=pause, seq = max(prev, baseline)+1)",
+        "operationId": "post_pause",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PauseRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ControlData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "CONTROL_WRITE_FAILED — 쓰기 실패·락 타임아웃(2 s)·seq 상한, 기존 파일 보존 / INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN_ORIGIN — Origin 불일치 또는 Content-Type 이 application/json 아님",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR — 본문 검증 (max_pause_sec 600~86400)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "NO_ACTIVE_LOOP — loop-status 가 running/paused 가 아님",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/control/resume": {
+      "post": {
+        "tags": [
+          "control"
+        ],
+        "summary": "재개 요청 (멱등, 루프가 없어도 200)",
+        "operationId": "post_resume",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ResumeRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ControlData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "CONTROL_WRITE_FAILED — 쓰기 실패·락 타임아웃(2 s)·seq 상한, 기존 파일 보존 / INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN_ORIGIN — Origin 불일치 또는 Content-Type 이 application/json 아님",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR — 본문 검증 (max_pause_sec 600~86400)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -335,6 +573,324 @@
   },
   "components": {
     "schemas": {
+      "ControlData": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "pause_requested",
+              "paused",
+              "resume_requested",
+              "no_session",
+              "ended"
+            ],
+            "title": "State",
+            "description": "화면 상태 (ADR-004 §4). loop-status 없음·ended = ended"
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "V1",
+              "V2",
+              "V3",
+              "V4",
+              "V5",
+              "V6"
+            ],
+            "title": "View",
+            "description": "stories/FR-005 §2.1 V1~V6"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "화면 라벨 (FR-005 §2.1 정확한 문구)"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint",
+            "description": "V1 남은 반복 / V6 재실행 안내 (FR-005 §2.1 추가 표시)"
+          },
+          "can_pause": {
+            "type": "boolean",
+            "title": "Can Pause",
+            "description": "일시정지 버튼 활성 (FR-005 §2.2)"
+          },
+          "can_resume": {
+            "type": "boolean",
+            "title": "Can Resume",
+            "description": "재개 버튼 활성 (FR-005 §2.2)"
+          },
+          "requested_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "pause"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested State",
+            "description": "`.control.json` state (정상 파일일 때만)"
+          },
+          "requested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested At"
+          },
+          "control_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Seq"
+          },
+          "baseline_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Seq"
+          },
+          "control_file": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing",
+              "broken",
+              "unreadable"
+            ],
+            "title": "Control File",
+            "description": "`.control.json` 판독 결과 (없음은 정상)"
+          },
+          "loop_file": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing",
+              "broken",
+              "unreadable"
+            ],
+            "title": "Loop File",
+            "description": "`loop-status.json` 판독 결과"
+          },
+          "loop_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "paused",
+                  "ended"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loop State"
+          },
+          "paused_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Since"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "heartbeat_age_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat Age Sec",
+            "description": "세션 생존 판정은 paused 에서만 (> 120 s = no_session, D-11)"
+          },
+          "iterations_done": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iterations Done"
+          },
+          "iterations_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iterations Total"
+          },
+          "remaining_iterations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Iterations"
+          },
+          "max_pause_sec": {
+            "type": "integer",
+            "title": "Max Pause Sec"
+          },
+          "pause_elapsed_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pause Elapsed Sec"
+          },
+          "remaining_pause_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Pause Sec",
+            "description": "paused 일 때 max_pause_sec − 경과"
+          },
+          "ended_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "done",
+                  "blocked",
+                  "no_task",
+                  "pause_timeout"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended Reason"
+          },
+          "ended_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended Message",
+            "description": "V1 종료 사유 문구 (FR-005 §2.3)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "view",
+          "label",
+          "hint",
+          "can_pause",
+          "can_resume",
+          "requested_state",
+          "requested_at",
+          "control_seq",
+          "baseline_seq",
+          "control_file",
+          "loop_file",
+          "loop_state",
+          "paused_since",
+          "heartbeat_at",
+          "heartbeat_age_sec",
+          "iterations_done",
+          "iterations_total",
+          "remaining_iterations",
+          "max_pause_sec",
+          "pause_elapsed_sec",
+          "remaining_pause_sec",
+          "ended_reason",
+          "ended_message"
+        ],
+        "title": "ControlData"
+      },
+      "Envelope_ControlData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[ControlData]"
+      },
       "Envelope_HealthData_": {
         "properties": {
           "data": {
@@ -877,6 +1433,28 @@
         ],
         "title": "Meta"
       },
+      "PauseRequest": {
+        "properties": {
+          "max_pause_sec": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 86400.0,
+                "minimum": 600.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pause Sec",
+            "description": "일시정지 1회 상한(초). 생략 시 7200"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PauseRequest",
+        "description": "본문 `{}` 또는 `{\"max_pause_sec\": 600~86400}` (정수 리터럴만 — bool·600.0 은 422)."
+      },
       "PhaseProgress": {
         "properties": {
           "phase": {
@@ -1035,6 +1613,13 @@
           "phases"
         ],
         "title": "PlanData"
+      },
+      "ResumeRequest": {
+        "properties": {},
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ResumeRequest",
+        "description": "본문 `{}`. 재개는 이전 `max_pause_sec` 를 유지한다."
       },
       "SourceError": {
         "properties": {

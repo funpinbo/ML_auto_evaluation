@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
         host=BIND_HOST,
         port=settings.port,
         access_log=False,
+        server_header=False,  # I-24: `server: uvicorn` 노출 안 함
         log_config=None,
     )
     return 0

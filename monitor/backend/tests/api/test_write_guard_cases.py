@@ -1,15 +1,21 @@
 """privacy.md §5.2 C-01~C-11 (N-04), N-03 Origin, ADR-011 §5 쓰기 가드 범위, §11 events 출처, §12 처리 순서.
 
-`POST /api/v1/control/{pause,resume}` 는 T-008 전이라 대역 라우트(본문 Pydantic 검증 포함)를 붙여
-"가드 통과 → 핸들러 도달" 과 "403 이 422 보다 먼저" 를 함께 확인한다.
+`POST /api/v1/control/{pause,resume}` 는 실제 라우트(T-008)다. 통과 기대값은 "400/403/422 아님"(I-25):
+활성 루프가 없는 workspace 에서 pause 는 409 `NO_ACTIVE_LOOP`(파일 무변경), resume 은 200(멱등, `.control.json`
+만 생김). 활성 루프가 있으면 pause 도 200.
 """
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from backend_support import (
+    CONTROL_REL,
+    GUARD_REJECT_STATUSES,
     ORIGIN,
     OTHER_PORT,
+    PASS_STATUS_NO_LOOP,
     TEST_PORT,
     add_stub_targets,
     asgi_http,
@@ -18,7 +24,9 @@ from backend_support import (
     make_client,
     make_settings,
 )
+from fixtures.contracts import is_valid
 from fixtures.hashing import hash_tree
+from fixtures.runtime_files import loop_status_doc, write_json
 
 from app.main import create_app
 
@@ -61,9 +69,19 @@ def test_content_type_cases(guarded, case: str, path: str) -> None:
         headers.append((b"content-type", ctype.encode()))
     control_before = info.control_file.exists()
     before = hash_tree(info.root)
+    before_rest = hash_tree(info.root, exclude=(CONTROL_REL,))
     resp = asgi_http(app, http_scope("POST", path, headers), body)
     if should_pass:
-        assert resp.status == 200, (case, resp.status, resp.body)
+        assert resp.status not in GUARD_REJECT_STATUSES, (case, resp.status)
+        assert resp.status == PASS_STATUS_NO_LOOP[path], (case, resp.status, resp.body)
+        # 쓰기는 `.control.json` 하나뿐 — resume 만 썼고, 그 밖의 트리는 그대로
+        assert hash_tree(info.root, exclude=(CONTROL_REL,)) == before_rest
+        if resp.status == 200:
+            assert is_valid(json.loads(info.control_file.read_text("utf-8")), "control")
+        else:
+            assert resp.json()["error"]["code"] == "NO_ACTIVE_LOOP"
+            assert hash_tree(info.root) == before
+        return
     else:
         assert resp.status == 403, (case, resp.status)
         assert resp.status not in (415, 422)
@@ -117,7 +135,38 @@ def test_n03_allowed_or_missing_origin_passes(
     app, _ = guarded
     headers = {} if origin is None else {"origin": origin}
     resp = make_client(app).post(path, json={}, headers=headers)
-    assert resp.status_code == 200
+    assert resp.status_code not in GUARD_REJECT_STATUSES
+    assert resp.status_code == PASS_STATUS_NO_LOOP[path]
+
+
+@pytest.fixture
+def guarded_active(engine_workspace):
+    """활성 루프(loop-status running)가 있는 workspace — pause 도 200 으로 핸들러가 쓴다."""
+    info = engine_workspace("full")
+    write_json(info.loop_status_file, loop_status_doc("running"))
+    return create_app(make_settings(info.root)), info
+
+
+@pytest.mark.parametrize("path", WRITE_TARGETS)
+@pytest.mark.parametrize("case", ["C-01", "C-02", "C-03"])
+def test_content_type_pass_cases_with_active_loop(
+    guarded_active, case: str, path: str
+) -> None:
+    app, info = guarded_active
+    ctype, body, _ = C_CASES[case]
+    headers = [
+        (b"host", f"127.0.0.1:{TEST_PORT}".encode()),
+        (b"origin", ORIGIN.encode()),
+        (b"content-type", ctype.encode()),
+    ]
+    before_rest = hash_tree(info.root, exclude=(CONTROL_REL,))
+    resp = asgi_http(app, http_scope("POST", path, headers), body)
+    assert resp.status == 200, (case, resp.status, resp.body)
+    doc = json.loads(info.control_file.read_text("utf-8"))
+    assert is_valid(doc, "control")
+    assert doc["state"] == ("pause" if path.endswith("pause") else "running")
+    assert doc["seq"] == 7  # baseline 6 + 1
+    assert hash_tree(info.root, exclude=(CONTROL_REL,)) == before_rest
 
 
 def test_multiple_origin_headers_rejected_for_writes(guarded) -> None:

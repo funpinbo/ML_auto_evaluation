@@ -18,6 +18,9 @@
 | plan | `GET` | [`/api/v1/plan`](#get-apiv1plan) | Phase 별 진행률과 현재·완료 Phase |
 | plan | `GET` | [`/api/v1/tasks`](#get-apiv1tasks) | Task 목록 (팀·상태·Phase 필터, AND) |
 | memory | `GET` | [`/api/v1/memory`](#get-apiv1memory) | STM·LTM·Task 동기 값과 미처리 cascade |
+| control | `GET` | [`/api/v1/control`](#get-apiv1control) | 루프 제어 화면 상태 (.control.json + loop-status.json 조합) |
+| control | `POST` | [`/api/v1/control/pause`](#post-apiv1controlpause) | 일시정지 요청 (.control.json state=pause, seq = max(prev, baseline)+1) |
+| control | `POST` | [`/api/v1/control/resume`](#post-apiv1controlresume) | 재개 요청 (멱등, 루프가 없어도 200) |
 | health | `GET` | [`/api/v1/health`](#get-apiv1health) | 생존·소스 접근 가능 여부·데우기 진행률·앱 식별자 |
 
 ## pipeline
@@ -329,6 +332,268 @@ cascade 판정은 Hook `Memory.pending().level` (ADR-009). `aidlc.py status` 는
 curl -X GET 'http://127.0.0.1:8765/api/v1/memory'
 ```
 
+## control
+
+### GET /api/v1/control
+
+**루프 제어 화면 상태 (.control.json + loop-status.json 조합)**
+
+loop-status 없음 = `meta.status=empty`, 깨짐 = `error`, 제어 파일 깨짐 = `partial`.
+
+- **인증:** 불필요
+- **operationId:** `get_control`
+
+#### 응답
+
+| 상태 코드 | 설명 | 본문 |
+|---|---|---|
+| `200` | Successful Response | Envelope_ControlData_ |
+| `400` | BAD_HOST — Host 가드 | ErrorResponse |
+| `405` | METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함) | ErrorResponse |
+| `500` | INTERNAL_ERROR | ErrorResponse |
+
+`200` 응답 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | ControlData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
+
+```json
+{
+  "data": {
+    "state": "running",
+    "view": "V1",
+    "label": "string",
+    "hint": "string",
+    "can_pause": true,
+    "can_resume": true,
+    "requested_state": "running",
+    "requested_at": "string",
+    "control_seq": 0,
+    "baseline_seq": 0,
+    "control_file": "ok",
+    "loop_file": "ok",
+    "loop_state": "running",
+    "paused_since": "string",
+    "heartbeat_at": "string",
+    "heartbeat_age_sec": 0,
+    "iterations_done": 0,
+    "iterations_total": 0,
+    "remaining_iterations": 0,
+    "max_pause_sec": 0,
+    "pause_elapsed_sec": 0,
+    "remaining_pause_sec": 0,
+    "ended_reason": "done",
+    "ended_message": "string"
+  },
+  "meta": {
+    "status": "ok",
+    "warnings": [
+      "string"
+    ],
+    "error": {
+      "code": "SOURCE_MISSING",
+      "message": "string"
+    },
+    "generated_at": "string",
+    "source_mtime": "string"
+  }
+}
+```
+
+#### 예시
+
+```bash
+curl -X GET 'http://127.0.0.1:8765/api/v1/control'
+```
+
+### POST /api/v1/control/pause
+
+**일시정지 요청 (.control.json state=pause, seq = max(prev, baseline)+1)**
+
+- **인증:** 불필요
+- **operationId:** `post_pause`
+
+#### 요청 본문
+
+`application/json`
+
+```json
+{
+  "max_pause_sec": 0
+}
+```
+
+#### 응답
+
+| 상태 코드 | 설명 | 본문 |
+|---|---|---|
+| `200` | Successful Response | Envelope_ControlData_ |
+| `400` | BAD_HOST — Host 가드 | ErrorResponse |
+| `405` | METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함) | ErrorResponse |
+| `500` | CONTROL_WRITE_FAILED — 쓰기 실패·락 타임아웃(2 s)·seq 상한, 기존 파일 보존 / INTERNAL_ERROR | ErrorResponse |
+| `403` | FORBIDDEN_ORIGIN — Origin 불일치 또는 Content-Type 이 application/json 아님 | ErrorResponse |
+| `422` | VALIDATION_ERROR — 본문 검증 (max_pause_sec 600~86400) | ErrorResponse |
+| `409` | NO_ACTIVE_LOOP — loop-status 가 running/paused 가 아님 | ErrorResponse |
+
+`200` 응답 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | ControlData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
+
+```json
+{
+  "data": {
+    "state": "running",
+    "view": "V1",
+    "label": "string",
+    "hint": "string",
+    "can_pause": true,
+    "can_resume": true,
+    "requested_state": "running",
+    "requested_at": "string",
+    "control_seq": 0,
+    "baseline_seq": 0,
+    "control_file": "ok",
+    "loop_file": "ok",
+    "loop_state": "running",
+    "paused_since": "string",
+    "heartbeat_at": "string",
+    "heartbeat_age_sec": 0,
+    "iterations_done": 0,
+    "iterations_total": 0,
+    "remaining_iterations": 0,
+    "max_pause_sec": 0,
+    "pause_elapsed_sec": 0,
+    "remaining_pause_sec": 0,
+    "ended_reason": "done",
+    "ended_message": "string"
+  },
+  "meta": {
+    "status": "ok",
+    "warnings": [
+      "string"
+    ],
+    "error": {
+      "code": "SOURCE_MISSING",
+      "message": "string"
+    },
+    "generated_at": "string",
+    "source_mtime": "string"
+  }
+}
+```
+
+#### 예시
+
+```bash
+curl -X POST 'http://127.0.0.1:8765/api/v1/control/pause' \
+  -H 'Content-Type: application/json' \
+  -d '{"max_pause_sec": 0}'
+```
+
+### POST /api/v1/control/resume
+
+**재개 요청 (멱등, 루프가 없어도 200)**
+
+- **인증:** 불필요
+- **operationId:** `post_resume`
+
+#### 요청 본문
+
+`application/json`
+
+```json
+{}
+```
+
+#### 응답
+
+| 상태 코드 | 설명 | 본문 |
+|---|---|---|
+| `200` | Successful Response | Envelope_ControlData_ |
+| `400` | BAD_HOST — Host 가드 | ErrorResponse |
+| `405` | METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함) | ErrorResponse |
+| `500` | CONTROL_WRITE_FAILED — 쓰기 실패·락 타임아웃(2 s)·seq 상한, 기존 파일 보존 / INTERNAL_ERROR | ErrorResponse |
+| `403` | FORBIDDEN_ORIGIN — Origin 불일치 또는 Content-Type 이 application/json 아님 | ErrorResponse |
+| `422` | VALIDATION_ERROR — 본문 검증 (max_pause_sec 600~86400) | ErrorResponse |
+
+`200` 응답 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | ControlData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
+
+```json
+{
+  "data": {
+    "state": "running",
+    "view": "V1",
+    "label": "string",
+    "hint": "string",
+    "can_pause": true,
+    "can_resume": true,
+    "requested_state": "running",
+    "requested_at": "string",
+    "control_seq": 0,
+    "baseline_seq": 0,
+    "control_file": "ok",
+    "loop_file": "ok",
+    "loop_state": "running",
+    "paused_since": "string",
+    "heartbeat_at": "string",
+    "heartbeat_age_sec": 0,
+    "iterations_done": 0,
+    "iterations_total": 0,
+    "remaining_iterations": 0,
+    "max_pause_sec": 0,
+    "pause_elapsed_sec": 0,
+    "remaining_pause_sec": 0,
+    "ended_reason": "done",
+    "ended_message": "string"
+  },
+  "meta": {
+    "status": "ok",
+    "warnings": [
+      "string"
+    ],
+    "error": {
+      "code": "SOURCE_MISSING",
+      "message": "string"
+    },
+    "generated_at": "string",
+    "source_mtime": "string"
+  }
+}
+```
+
+#### 예시
+
+```bash
+curl -X POST 'http://127.0.0.1:8765/api/v1/control/resume' \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
 ## health
 
 ### GET /api/v1/health
@@ -401,6 +666,47 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/health'
 ```
 
 ## 스키마
+
+### ControlData
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `state` | string enum: `running`, `pause_requested`, `paused`, `resume_requested`, `no_session`, `ended` | ✅ | 화면 상태 (ADR-004 §4). loop-status 없음·ended = ended |
+| `view` | string enum: `V1`, `V2`, `V3`, `V4`, `V5`, `V6` | ✅ | stories/FR-005 §2.1 V1~V6 |
+| `label` | string | ✅ | 화면 라벨 (FR-005 §2.1 정확한 문구) |
+| `hint` | string \| null | ✅ | V1 남은 반복 / V6 재실행 안내 (FR-005 §2.1 추가 표시) |
+| `can_pause` | boolean | ✅ | 일시정지 버튼 활성 (FR-005 §2.2) |
+| `can_resume` | boolean | ✅ | 재개 버튼 활성 (FR-005 §2.2) |
+| `requested_state` | string enum: `running`, `pause` \| null | ✅ | `.control.json` state (정상 파일일 때만) |
+| `requested_at` | string \| null | ✅ |  |
+| `control_seq` | integer \| null | ✅ |  |
+| `baseline_seq` | integer \| null | ✅ |  |
+| `control_file` | string enum: `ok`, `missing`, `broken`, `unreadable` | ✅ | `.control.json` 판독 결과 (없음은 정상) |
+| `loop_file` | string enum: `ok`, `missing`, `broken`, `unreadable` | ✅ | `loop-status.json` 판독 결과 |
+| `loop_state` | string enum: `running`, `paused`, `ended` \| null | ✅ |  |
+| `paused_since` | string \| null | ✅ |  |
+| `heartbeat_at` | string \| null | ✅ |  |
+| `heartbeat_age_sec` | integer \| null | ✅ | 세션 생존 판정은 paused 에서만 (> 120 s = no_session, D-11) |
+| `iterations_done` | integer \| null | ✅ |  |
+| `iterations_total` | integer \| null | ✅ |  |
+| `remaining_iterations` | integer \| null | ✅ |  |
+| `max_pause_sec` | integer | ✅ |  |
+| `pause_elapsed_sec` | integer \| null | ✅ |  |
+| `remaining_pause_sec` | integer \| null | ✅ | paused 일 때 max_pause_sec − 경과 |
+| `ended_reason` | string enum: `done`, `blocked`, `no_task`, `pause_timeout` \| null | ✅ |  |
+| `ended_message` | string \| null | ✅ | V1 종료 사유 문구 (FR-005 §2.3) |
+
+### Envelope_ControlData_
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | ControlData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
 
 ### Envelope_HealthData_
 
@@ -557,6 +863,14 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/health'
 | `generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
 | `source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
 
+### PauseRequest
+
+본문 `{}` 또는 `{"max_pause_sec": 600~86400}` (정수 리터럴만 — bool·600.0 은 422).
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `max_pause_sec` | integer \| null |  | 일시정지 1회 상한(초). 생략 시 7200 |
+
 ### PhaseProgress
 
 | 필드 | 타입 | 필수 | 설명 |
@@ -606,6 +920,12 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/health'
 | `phases[].percent` | integer | ✅ | floor(checked / total × 100), total 0 이면 0 |
 | `phases[].completed` | boolean \| null | ✅ | plan completed_phases 에 있음 (plan 을 못 읽으면 null) |
 | `phases[].current` | boolean \| null | ✅ | plan current_phase 와 같음 (plan 을 못 읽으면 null) |
+
+### ResumeRequest
+
+본문 `{}`. 재개는 이전 `max_pause_sec` 를 유지한다.
+
+타입: object
 
 ### SourceError
 

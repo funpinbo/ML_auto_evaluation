@@ -2,7 +2,7 @@
 
 `*` 행은 4개 대상(GET /api/v1/health, POST /api/v1/control/pause, GET /api/v1/events, GET /) 각각에 대해
 원시 ASGI scope 로 실행한다(Host 0개·2개·빈 값까지 정확히 구성 — H-16~H-19). 통과 행은 가드를 지나
-핸들러(대역 또는 dist index)가 200 을 돌려줌을 확인한다. 거부 행은 400 `BAD_HOST`, 메시지에 받은 Host
+핸들러(대역·실제 라우트·dist index)에 닿음을 확인한다 — pause 는 실제 라우트라 활성 루프 없음 409(I-25). 거부 행은 400 `BAD_HOST`, 메시지에 받은 Host
 미포함, 보안 헤더 포함, workspace(.control.json 포함) 해시 불변.
 """
 
@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from backend_support import (
     BASE_URL,
+    GUARD_REJECT_STATUSES,
     ORIGIN,
     OTHER_PORT,
     TEST_PORT,
@@ -102,7 +103,10 @@ def test_host_cases_star(guarded, case: str, target: str) -> None:
     body = b"{}" if method == "POST" else b""
     resp = asgi_http(app, http_scope(method, path, _headers(hosts, method)), body)
     if should_pass:
-        assert resp.status == 200, (case, target, resp.status, resp.body[:200])
+        # I-25: 실제 pause 라우트 — 활성 루프가 없는 workspace 라 409 NO_ACTIVE_LOOP (가드는 통과)
+        expected = 409 if target == "pause" else 200
+        assert resp.status not in GUARD_REJECT_STATUSES
+        assert resp.status == expected, (case, target, resp.status, resp.body[:200])
     else:
         _assert_rejected(resp, hosts)
     assert hash_tree(info.root) == before
