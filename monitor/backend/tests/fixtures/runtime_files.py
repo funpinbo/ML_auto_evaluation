@@ -31,9 +31,19 @@ def write_json(path: Path, obj: object) -> Path:
 
 # ---- .control.json ---------------------------------------------------------
 def control_doc(
-    state: str = "running", seq: int = 1, *, now: datetime = FIXED_NOW, max_pause_sec: int = PAUSE_LIMIT_SEC
+    state: str = "running",
+    seq: int = 1,
+    *,
+    now: datetime = FIXED_NOW,
+    max_pause_sec: int = PAUSE_LIMIT_SEC,
 ) -> dict:
-    return {"schema": 1, "seq": seq, "state": state, "requested_at": iso(now), "max_pause_sec": max_pause_sec}
+    return {
+        "schema": 1,
+        "seq": seq,
+        "state": state,
+        "requested_at": iso(now),
+        "max_pause_sec": max_pause_sec,
+    }
 
 
 # ---- loop-status.json ------------------------------------------------------
@@ -66,7 +76,10 @@ def loop_status_doc(scenario: str, *, now: datetime = FIXED_NOW) -> dict:
     if scenario == "running":
         return base
     if scenario == "paused":
-        return base | {"state": "paused", "paused_since": iso(now - timedelta(minutes=30))}
+        return base | {
+            "state": "paused",
+            "paused_since": iso(now - timedelta(minutes=30)),
+        }
     if scenario == "resumed":
         return base | {"iterations_done": 2}
     if scenario == "pause_over_limit":
@@ -74,11 +87,17 @@ def loop_status_doc(scenario: str, *, now: datetime = FIXED_NOW) -> dict:
         return base | {"state": "paused", "paused_since": iso(since)}
     if scenario == "pause_timeout":
         since = now - timedelta(seconds=PAUSE_LIMIT_SEC + 60)
-        return base | {"state": "ended", "ended_reason": "pause_timeout", "paused_since": iso(since)}
+        return base | {
+            "state": "ended",
+            "ended_reason": "pause_timeout",
+            "paused_since": iso(since),
+        }
     if scenario == "done":
         return base | {"state": "ended", "ended_reason": "done", "iterations_done": 3}
     if scenario == "heartbeat_expired":
-        return base | {"heartbeat_at": iso(now - timedelta(seconds=HEARTBEAT_EXPIRY_SEC + 60))}
+        return base | {
+            "heartbeat_at": iso(now - timedelta(seconds=HEARTBEAT_EXPIRY_SEC + 60))
+        }
     raise ValueError(f"unknown loop scenario: {scenario!r}")
 
 
@@ -104,7 +123,10 @@ STALE_AFTER_SEC = 600  # captured_at 이 10분보다 오래되면 SNAPSHOT_STALE
 
 
 def claude_status_doc(
-    kind: str = "normal", *, now: datetime = FIXED_NOW, transcript_dir_name: str | None = None
+    kind: str = "normal",
+    *,
+    now: datetime = FIXED_NOW,
+    transcript_dir_name: str | None = None,
 ) -> dict | None:
     """status line 스냅샷 dict. `none`/`broken` 은 파일 자체가 없거나 깨진 경우라 None."""
     if kind in ("none", "broken"):
@@ -118,8 +140,14 @@ def claude_status_doc(
         "session_hash": session_hash("fake-session"),
         "transcript_dir_name": transcript_dir_name,
         "rate_limits": {
-            "five_hour": {"used_percentage": 23.5, "resets_at": int((now + timedelta(hours=2)).timestamp())},
-            "seven_day": {"used_percentage": 41, "resets_at": int((now + timedelta(days=3)).timestamp())},
+            "five_hour": {
+                "used_percentage": 23.5,
+                "resets_at": int((now + timedelta(hours=2)).timestamp()),
+            },
+            "seven_day": {
+                "used_percentage": 41,
+                "resets_at": int((now + timedelta(days=3)).timestamp()),
+            },
         },
         "cost": {"total_cost_usd": 0.12, "total_duration_ms": 345000},
         "context_window": {"used_percentage": 8, "context_window_size": 200000},
@@ -132,11 +160,15 @@ def claude_status_doc(
 def write_claude_status(path: Path, kind: str = "normal", **kwargs: object) -> Path:
     """스냅샷 fixture 를 쓴다. `none` 은 파일을 만들지 않고, `broken` 은 잘린 JSON 을 쓴다."""
     if kind not in SNAPSHOT_KINDS:
-        raise ValueError(f"unknown snapshot kind: {kind!r} (expected one of {SNAPSHOT_KINDS})")
+        raise ValueError(
+            f"unknown snapshot kind: {kind!r} (expected one of {SNAPSHOT_KINDS})"
+        )
     doc = claude_status_doc(kind, **kwargs)  # type: ignore[arg-type]
     if kind == "broken":
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('{"schema": 1, "captured_at": "2026-10-23T08:5', encoding="utf-8")
+        path.write_text(
+            '{"schema": 1, "captured_at": "2026-10-23T08:5', encoding="utf-8"
+        )
     elif doc is not None:
         write_json(path, doc)
     return path

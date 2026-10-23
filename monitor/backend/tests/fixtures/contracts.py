@@ -20,14 +20,19 @@ SCHEMA_NAMES = ("control", "loop-status", "claude-status")
 
 @cache
 def _validator(name: str) -> Draft202012Validator:
-    schema = json.loads((CONTRACTS_DIR / f"{name}.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        (CONTRACTS_DIR / f"{name}.schema.json").read_text(encoding="utf-8")
+    )
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
 
 
 def schema_errors(instance: object, name: str) -> list[str]:
     """위반 목록(경로: 메시지). 비어 있으면 통과. 메시지에 입력 값이 섞일 수 있으므로 로그에 쓰지 않는다."""
-    return [f"{'/'.join(map(str, e.absolute_path)) or '<root>'}: {e.message}" for e in _validator(name).iter_errors(instance)]
+    return [
+        f"{'/'.join(map(str, e.absolute_path)) or '<root>'}: {e.message}"
+        for e in _validator(name).iter_errors(instance)
+    ]
 
 
 def is_valid(instance: object, name: str) -> bool:

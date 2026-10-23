@@ -38,7 +38,12 @@ class ClaudeHome:
 
     def forbidden_strings(self) -> tuple[str, ...]:
         """응답·로그·집계 어디에도 나오면 안 되는 값: 표식 + 경로 + 디렉터리 이름."""
-        return (*markers.ALL_MARKERS, self.dir_name, str(self.home), str(self.project_dir))
+        return (
+            *markers.ALL_MARKERS,
+            self.dir_name,
+            str(self.home),
+            str(self.project_dir),
+        )
 
 
 def build_claude_home(
@@ -66,7 +71,9 @@ def build_claude_home(
         manifest = write_project_jsonl(project_dir, **jsonl_options)  # type: ignore[arg-type]
     settings = {
         "statusLine": {"type": "command", "command": f"echo {markers.SETTINGS}"},
-        "env": {"FAKE_TOKEN": markers.SETTINGS},  # statusLine 외 키는 읽지 않는다 (P-23)
+        "env": {
+            "FAKE_TOKEN": markers.SETTINGS
+        },  # statusLine 외 키는 읽지 않는다 (P-23)
     }
     home.joinpath("settings.json").write_text(json.dumps(settings), encoding="utf-8")
     if with_decoys:
@@ -74,10 +81,13 @@ def build_claude_home(
             json.dumps({"token": markers.CREDENTIAL}), encoding="utf-8"
         )
         home.joinpath("history.jsonl").write_text(
-            json.dumps({"display": markers.CREDENTIAL, "usage": {"input_tokens": 1}}) + "\n",
+            json.dumps({"display": markers.CREDENTIAL, "usage": {"input_tokens": 1}})
+            + "\n",
             encoding="utf-8",
         )
-    return ClaudeHome(home=home, project_dir=project_dir, dir_name=dir_name, manifest=manifest)
+    return ClaudeHome(
+        home=home, project_dir=project_dir, dir_name=dir_name, manifest=manifest
+    )
 
 
 @dataclass(frozen=True)

@@ -25,19 +25,21 @@ _TESTS_DIR = str(Path(__file__).resolve().parent)
 if _TESTS_DIR not in sys.path:
     sys.path.insert(0, _TESTS_DIR)
 
-from fixtures.claude_home import (  # noqa: E402
+from fixtures.claude_home import (
     ClaudeHome,
     EscapeCase,
     add_symlink_escapes,
     build_claude_home,
 )
-from fixtures.jsonl_gen import FIXED_NOW  # noqa: E402
-from fixtures.runtime_files import write_claude_status  # noqa: E402
-from fixtures.workspace import WorkspaceInfo, build_workspace  # noqa: E402
+from fixtures.jsonl_gen import FIXED_NOW
+from fixtures.runtime_files import write_claude_status
+from fixtures.workspace import WorkspaceInfo, build_workspace
 
 
 @pytest.fixture(autouse=True)
-def _isolate_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _isolate_home(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
     """실제 홈을 가리킬 수 있는 환경 변수를 임시 경로로 바꾼다."""
     fake_home = tmp_path_factory.mktemp("fake_home")
     for var in ("HOME", "USERPROFILE"):
@@ -58,10 +60,15 @@ def workspace_factory(tmp_path: Path) -> Callable[..., WorkspaceInfo]:
     """`workspace_factory("closed_stm", task_count=100)` 처럼 호출한다. kind 마다 한 번만 만들 수 있다."""
     counter = {"n": 0}
 
-    def make(kind: str = "full", *, task_count: int = 12, name: str | None = None) -> WorkspaceInfo:
+    def make(
+        kind: str = "full", *, task_count: int = 12, name: str | None = None
+    ) -> WorkspaceInfo:
         counter["n"] += 1
         return build_workspace(
-            tmp_path / "workspaces", kind, task_count=task_count, name=name or f"{kind}-{counter['n']}"
+            tmp_path / "workspaces",
+            kind,
+            task_count=task_count,
+            name=name or f"{kind}-{counter['n']}",
         )
 
     return make
@@ -105,7 +112,9 @@ def claude_home_factory(tmp_path: Path) -> Callable[..., ClaudeHome]:
 
     def make(workspace_root: Path, **options: object) -> ClaudeHome:
         counter["n"] += 1
-        return build_claude_home(tmp_path / f"home-{counter['n']}", workspace_root, **options)
+        return build_claude_home(
+            tmp_path / f"home-{counter['n']}", workspace_root, **options
+        )
 
     return make
 
@@ -134,14 +143,23 @@ class AppEnv:
 
     @property
     def env(self) -> dict[str, str]:
-        return {"AIDLC_ROOT": str(self.workspace.root), "CLAUDE_HOME": str(self.claude_home.home)}
+        return {
+            "AIDLC_ROOT": str(self.workspace.root),
+            "CLAUDE_HOME": str(self.claude_home.home),
+        }
 
 
 @pytest.fixture
-def app_env(full_workspace: WorkspaceInfo, claude_home: ClaudeHome, monkeypatch: pytest.MonkeyPatch) -> AppEnv:
+def app_env(
+    full_workspace: WorkspaceInfo,
+    claude_home: ClaudeHome,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AppEnv:
     """full workspace + 정상 스냅샷 + CLAUDE_HOME 을 만들고 환경 변수로 주입한다."""
     write_claude_status(
-        full_workspace.claude_status_file, "normal", transcript_dir_name=claude_home.dir_name
+        full_workspace.claude_status_file,
+        "normal",
+        transcript_dir_name=claude_home.dir_name,
     )
     env = AppEnv(full_workspace, claude_home)
     for key, value in env.env.items():

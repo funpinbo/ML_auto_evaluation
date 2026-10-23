@@ -43,11 +43,15 @@ FALSE_POSITIVE_TOKENS = 777_777
 
 def find_markers(*texts: str | bytes, extra: tuple[str, ...] = ()) -> list[str]:
     """주어진 텍스트들에서 발견된 표식(중복 제거, 정의 순서)을 돌려준다."""
-    haystack = "\n".join(t.decode("utf-8", "replace") if isinstance(t, bytes) else t for t in texts)
+    haystack = "\n".join(
+        t.decode("utf-8", "replace") if isinstance(t, bytes) else t for t in texts
+    )
     return [m for m in (*ALL_MARKERS, *extra) if m in haystack]
 
 
-def assert_no_markers(*texts: str | bytes, extra: tuple[str, ...] = (), where: str = "") -> None:
+def assert_no_markers(
+    *texts: str | bytes, extra: tuple[str, ...] = (), where: str = ""
+) -> None:
     """표식이 하나라도 있으면 실패한다. 실패 메시지에는 표식 종류만 적고 주변 내용은 적지 않는다."""
     found = find_markers(*texts, extra=extra)
     assert not found, f"본문 표식 노출{f' ({where})' if where else ''}: {found}"

@@ -28,6 +28,10 @@ opened_at: 2026-10-23T08:30:00+00:00
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->
+- 2026-10-23 **세션 일시 중단(사용자 요청, 나중에 재개).** team-qa 작업 도중 오케스트레이터가 중지함. 완료 여부 미검증.
+  - 존재: `monitor/backend/tests/conftest.py`, `tests/fixtures/*.py`(workspace, jsonl_gen, claude_home, hashing, markers, contracts, runtime_files, reference_parser), `tests/scenarios/test_fixture_{contract,jsonl,workspace}_smoke.py`. `monitor/.venv`(pytest 9.1.1 등) 생성됨(gitignore).
+  - 미작성: `workspace/project/qa/test-strategy.md`. 마지막 파일 수정 도중 중단되어 fixture 일부가 덜 쓰였을 수 있음 → 재개 시 먼저 `monitor/.venv/bin/python -m pytest monitor/backend/tests -q` 와 ruff 로 상태 확인.
+  - 재개 방법: STM 을 `status: active` 로 둔 채 `/aidlc-run` → 0단계에서 이 STM 이어받아 3단계(team-qa 작업 모드 재위임). 남은 일: test-strategy.md, smoke 통과·ruff 확인, STM §5 `[cicd]` dev 패키지 후보 기록, §6 검증 결과, outcome 설정 → 리뷰 게이트(security, architecture 등) → 닫기.
 
 ## 4. 발견 사항 (LTM 후보)
 - 결정:

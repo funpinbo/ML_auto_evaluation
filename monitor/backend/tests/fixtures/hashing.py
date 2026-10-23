@@ -55,5 +55,7 @@ def diff_manifests(before: dict[str, str], after: dict[str, str]) -> TreeDiff:
     return TreeDiff(
         added=sorted(set(after) - set(before)),
         removed=sorted(set(before) - set(after)),
-        changed=sorted(k for k in before.keys() & after.keys() if before[k] != after[k]),
+        changed=sorted(
+            k for k in before.keys() & after.keys() if before[k] != after[k]
+        ),
     )
