@@ -1,9 +1,9 @@
 ---
-status: idle
-task: none
-team: none
+status: active
+task: T-006
+team: ops
 outcome: none
-opened_at: none
+opened_at: 2026-10-23T18:10:57+00:00
 ---
 # Short-term Memory
 
@@ -13,11 +13,14 @@ opened_at: none
 > frontmatter 값: status(idle|active|closed) / outcome(done|partial|blocked)
 
 ## 1. 목표
-- Task: (T-ID 와 제목, tasks.md 에서 복사)
-- 완료 조건(DoD):
+- Task: T-006 [ops] logging_config + GET /api/v1/health(소스 접근 가능 여부·데우기 진행률·앱 식별자) + 런북 — NFR-002, CON-05 | deps: T-005
+- 완료 조건(DoD): health 테스트 통과, 로그에 본문·경로·ID 없음, T-005 연결 지점 사용(`app/api/health.py` 의 `router` 자동 마운트, `app/logging_config.setup_logging()` 자동 호출, health 는 backend 의 `source_status()`·데우기 진행률 읽기 함수 호출) + user/02 §10 공통 DoD
 
 ## 2. 로드한 컨텍스트
-- 관련 FR / 팀 charter / LTM 항목:
+- 관련: NFR-002, CON-05, user/02 §7(로깅), 03 §7(관측성), QS-11(heartbeat 만료 표시)
+- 소유(40 §1.1): app/logging_config.py, app/api/health.py, app/models/health.py, tests/ops/
+- 연결 지점(T-005): `app/api/health.py` 의 `router` 자동 마운트, `app/logging_config.setup_logging()` 자동 호출, backend 읽기 함수 `source_status()`·데우기 진행률 호출
+- LTM: D-08(envelope), D-26(에러 코드), D-30(가드 체인), D-32(포트), 패턴(TestClient base_url, 로그에 경로·ID·본문 금지), backend 실행 명령
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->
