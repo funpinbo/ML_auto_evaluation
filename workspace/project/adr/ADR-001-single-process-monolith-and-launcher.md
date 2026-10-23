@@ -20,9 +20,9 @@ related: [SCOPE-01, KPI-02, NFR-001, NFR-003, CON-02, 원칙 1, 원칙 3, 03 §3
 2. **`run.py`(표준 라이브러리만)** 순서:
    1. `sys.version_info >= (3, 11)` 확인, 아니면 안내 후 exit 1.
    2. `monitor/.venv` 없으면 `venv.create(with_pip=True)`.
-   3. `monitor/backend/requirements.txt` 의 sha256 을 `monitor/.venv/.requirements.sha256` 과 비교, 다르면 `<venv python> -m pip install -r ...` 후 마커 갱신.
-   4. 포트 확인: 사용 중이면 `GET /api/v1/health` 의 `app == "aidlc-monitor"` 이면 이미 실행 중 → 브라우저만 열고 종료. 아니면 다음 포트(최대 10개).
-   5. `<venv python> -m uvicorn ... --host 127.0.0.1 --port N --no-access-log` 를 자식 프로세스로 실행.
+   3. `monitor/backend/requirements.txt` 의 sha256 을 `monitor/.venv/.requirements.sha256` 과 비교, 다르면 `<venv python> -m pip install --no-cache-dir -r ...`(사용자 전역 pip 캐시에 쓰지 않음, 02 §11) 후 마커 갱신. 설치 실패 시 마커를 쓰지 않는다.
+   4. 포트 확인: 시작 포트(기본 8765, `--port` > `AIDLC_MONITOR_PORT`, 1~65535·0 금지 D-19/D-32)부터 최대 10개. 사용 중인 포트는 `GET /api/v1/health` 가 200 이고 `data.app == "aidlc-monitor"`(D-34) 이면 이미 실행 중 → 새 서버 없이 브라우저만 열고 종료. 아니면 다음 포트.
+   5. `<venv python> -m app --port N` 을 `cwd=monitor/backend` 자식 프로세스로 실행. **호스트 인자는 넘기지 않는다** — 바인딩 주소는 `app/config.py` 의 `127.0.0.1` 상수(03 §8, 옵션 없음). 자식 환경에서 `AIDLC_MONITOR_PORT` 를 제거해 런처가 실제 선택한 `--port` 가 `settings.port` 의 단일 출처가 되게 한다(D-19). uvicorn 직접 호출·access log 설정은 `app/__main__.py`(backend/ops) 몫.
    6. 헬스 200 까지 최대 20 s 대기 → `webbrowser.open("http://127.0.0.1:N/")` (`--no-browser` 로 생략 가능).
    7. Ctrl+C → 자식 종료. 종료 코드 전달.
 3. **`run.sh`**: `aidlc/hooks/run.sh` 와 같은 방식으로 `python3 → python → py` 를 실제 실행해 3.11+ 인지 확인 후 `exec "$py" run.py "$@"`.
@@ -44,3 +44,6 @@ related: [SCOPE-01, KPI-02, NFR-001, NFR-003, CON-02, 원칙 1, 원칙 3, 03 §3
 - (−) 프로세스 재시작 시 사용량 캐시 재구축(ADR-002 데우기로 완화).
 - `.gitignore` 에 `monitor/.venv/` 추가(cicd).
 - 검증: KPI-02 리허설(Windows 1회 + macOS/Linux 1회), 런처 단위 테스트(해시 마커·포트 선택 로직은 함수로 분리해 pytest).
+
+## 변경 이력
+- 2026-10-23 T-007 architecture 리뷰 조치: Decision 2.3·2.4·2.5 를 구현과 일치시킴 — 자식 명령 `<venv python> -m app --port N`(호스트 인자 없음, 127.0.0.1 은 `app/config.py` 상수), 자식 env 에서 `AIDLC_MONITOR_PORT` 제거(D-19), 포트 최대 10개, 마커 `monitor/.venv/.requirements.sha256`, `pip install --no-cache-dir`, 중복 실행 판정 = health 200 + `data.app`(D-34). 구조 결정 변경 없음(문구 정정).
