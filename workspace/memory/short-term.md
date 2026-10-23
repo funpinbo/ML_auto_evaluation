@@ -1,9 +1,9 @@
 ---
-status: idle
-task: none
-team: none
+status: active
+task: T-001
+team: architecture
 outcome: none
-opened_at: none
+opened_at: 2026-10-23T07:36:23+00:00
 ---
 # Short-term Memory
 
@@ -13,11 +13,14 @@ opened_at: none
 > frontmatter 값: status(idle|active|closed) / outcome(done|partial|blocked)
 
 ## 1. 목표
-- Task: (T-ID 와 제목, tasks.md 에서 복사)
-- 완료 조건(DoD):
+- Task: T-001 [architecture] 파일 계약 3종(.control.json, loop-status.json, claude-status.json JSON Schema) + loop-cli.md(서브커맨드·exit code) + sse-events.md + contracts/README — FR-004, FR-005, FR-008 | deps: -
+- 완료 조건(DoD): workspace/project/contracts/ 에 스키마·문서 존재, ADR-003·004·011 과 일치 + user/02 §10 공통 DoD
 
 ## 2. 로드한 컨텍스트
-- 관련 FR / 팀 charter / LTM 항목:
+- 관련 FR: FR-004(사용량·스냅샷), FR-005(루프 제어), FR-008(SSE) — 00-interpretation.md §2
+- 근거 문서: workspace/project/20-architecture-analysis.md §5, adr/ADR-003·004·010·011
+- 팀 charter: workspace/teams/architecture/charter.md (contracts/ 소유, openapi.json 은 backend 가 export)
+- LTM: D-03(스냅샷 경로), D-04(파일당 쓰기 주체 1개, exit 0/10/20/2), D-08(envelope·에러 포맷)
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->
