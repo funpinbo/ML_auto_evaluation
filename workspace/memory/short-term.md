@@ -30,6 +30,9 @@ opened_at: 2026-10-23T07:36:23+00:00
 - loop-cli.md(인자, 파일 판독 규칙, 서브커맨드별 동작, exit code, stdout, heartbeat, baseline_seq, 상태 전이, 스킬 규칙 요약, 테스트 기준), sse-events.md(연결, 이벤트 3종+keep-alive, topic 9개·감시 대상·M1 4개, 호환성), README.md(색인, 런타임 파일 위치·단일 작성자·gitignore) 작성
 - 중간 schema 3종이 오케스트레이터 WIP 커밋 c1888f7 에 포함됨 → 이후 date-time pattern 추가분은 미커밋 상태
 - `aidlc.py check project` GATE PASS, `python3 -m unittest discover -s aidlc/tests` OK
+- (security FAIL 조치 1회차) claude-status.schema.json `transcript_dir_name` pattern → `^(?!\.{1,2}(?![\s\S]))[A-Za-z0-9._-]{1,255}(?![\s\S])`. 제안된 `$` 앵커는 Python re 에서 끝 개행 앞 매치라 `x\n` 통과 확인 → `(?![\s\S])` 로 교체(Python·ECMA 동일 동작, node 로 확인). 설명에 인코딩 규칙(~/.claude/projects 실측 `-home-user-chatbot`)·reader 재검증·projects 직속 하위 확인·비노출 추가
+- README §2 에 transcript_dir_name API/SSE/로그 비노출 규칙, §3 에 "보안 관련 필드는 reader 도 재검증 + resolve 후 직속 하위 확인, 실패 시 힌트 무시·폴백" 예외 추가. sse-events.md §2 비노출 문구 보강. loop-cli.md 는 claude-status 를 읽지 않고 이미 stdout 경로 금지라 변경 없음. .gitignore(cicd)·backend 미변경
+- 검증: jsonschema check_schema + examples 통과, 양성(-home-user-chatbot, C--Users-me-proj, 255자) 통과, 음성(.., ., a/b, a\\b, C:, x\n, ..\n, NUL, 빈 문자열, 256자) 모두 거부
 
 ## 4. 발견 사항 (LTM 후보)
 - 결정 (ADR 이 모호해서 정한 것, ADR-004 갱신 때 반영 후보):

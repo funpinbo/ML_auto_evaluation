@@ -29,7 +29,7 @@ sources: [20 §5 F2, 20 §4 변경 감지 & SSE 허브, ADR-008, ADR-010, ADR-01
 
 - 프레임 형식: `event: <name>\ndata: <json>\n\n`. `data` 는 항상 한 줄 JSON 객체.
 - 한 폴링 tick(1초, ADR-008)에서 감지한 변경은 **`changed` 1개로 합친다**(topic 합집합).
-- 페이로드에 파일 경로·파일 내용·ID 를 넣지 않는다(ADR-011 §8).
+- 페이로드에 파일 경로·파일 내용·ID 를 넣지 않는다(ADR-011 §8). `claude-status.json` 의 `transcript_dir_name`(인코딩된 절대경로, 홈·사용자명 포함)과 해석된 transcript 경로도 여기에 포함된다 — SSE 페이로드·서버 로그 어디에도 쓰지 않는다(contracts/README §2).
 
 ## 3. Topic 목록과 감시 대상
 | topic | 다시 조회할 API | 변경 원천 (stat 감시) | 마일스톤 |

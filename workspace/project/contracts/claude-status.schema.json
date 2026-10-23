@@ -47,9 +47,9 @@
       "pattern": "^[0-9a-f]{12}$"
     },
     "transcript_dir_name": {
-      "description": "Name (single path segment, no separators) of the directory containing transcript_path, i.e. the encoded project dir under ~/.claude/projects/. Used only as a resolver hint (ADR-002). null if absent.",
+      "description": "Name (single path segment) of the directory containing transcript_path, i.e. the encoded project dir under ~/.claude/projects/ (Claude Code replaces every non-alphanumeric char of the absolute project path with '-', e.g. /home/user/chatbot -> -home-user-chatbot). Charset limited to [A-Za-z0-9._-], '.' and '..' excluded. End anchor is (?![\\s\\S]) not $, because Python re '$' also matches before a trailing newline (dialect-neutral with ECMA-262). Used only as a resolver hint (ADR-002). null if absent. SECURITY: readers MUST re-validate this field against this pattern regardless of the tolerant-reader rule (README §3) and MUST check the resolved path is a direct child of ~/.claude/projects/; invalid -> ignore the hint and fall back. It is an encoded absolute path (home dir / username): never expose it in API responses, SSE payloads or logs (ADR-011 §8).",
       "type": ["string", "null"],
-      "pattern": "^[^/\\\\]+$",
+      "pattern": "^(?!\\.{1,2}(?![\\s\\S]))[A-Za-z0-9._-]{1,255}(?![\\s\\S])",
       "maxLength": 255
     },
     "rate_limits": {
