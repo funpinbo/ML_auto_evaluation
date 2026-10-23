@@ -1,5 +1,7 @@
 # AI-DLC 실험 저장소
 
+📖 **사용 설명서: [docs/aidlc/README.md](docs/aidlc/README.md)**
+
 사용자가 **템플릿에 맞춰 문서를 쓰면**, Agent 가 이를 해석해서 분석 → 팀 생성 → 계획 → 실행까지 진행하는 **AI-Driven Development Life Cycle** 을 Claude Code 기본 기능(Subagent · Skill · Hook)만으로 구현했습니다.
 
 ## 전체 흐름
@@ -42,6 +44,7 @@ flowchart TD
 /aidlc-teams           # core 6팀 + 조건부 팀 → teams/<id>/charter.md + .claude/agents/team-<id>.md
 /aidlc-plan            # plan.md (Phase) + tasks.md (Task) + LTM 시드
 /aidlc-run 3           # Task 3개: STM 열기 → 팀 Agent → 리뷰 게이트 → STM 닫기 → cascade
+/aidlc-docs            # API 탐지 → REST API 레퍼런스 자동 생성 + API 가이드 + 사용자 가이드
 /aidlc-status          # 현재 위치와 다음 명령
 ```
 
@@ -59,7 +62,11 @@ aidlc/
   hooks/memory_cascade.py        메모리 cascade 엔진 (표준 라이브러리만 사용)
   teams/catalog.json             팀 카탈로그 17팀 (core 6)
   scripts/aidlc.py               init / check / teams / new-team / status
+  scripts/openapi_docs.py        OpenAPI 3.x → REST API 레퍼런스 Markdown
+  examples/                      샘플 챗봇 OpenAPI 명세
   tests/                         cascade 엔진 테스트
+docs/aidlc/                      프레임워크 사용 설명서 (+ examples/ 생성 예시)
+docs/api, docs/guide             ← /aidlc-docs 가 생성하는 프로젝트 문서
 workspace/                       ← /aidlc-init 이 생성하는 실제 프로젝트 인스턴스
 ```
 

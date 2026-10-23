@@ -26,6 +26,7 @@ disable-model-invocation: true
      | cicd | PR 게이트 CI (lint/type/test/보안 스캔) |
      | ops | slo.md (NFR → SLI/SLO), 로깅·메트릭 계측 규칙 |
      | security | threat-model.md, privacy.md |
+   - 각 Phase 의 마지막 Task 로 문서화 Task 를 둔다: `- [ ] T-xxx [docs|product] Phase 문서 갱신 — /aidlc-docs | deps: (Phase 기능 Task들) | DoD: aidlc.py check docs 통과` (docs 팀이 없으면 product).
    - 기능 Task 의 deps 에는 관련 기반 Task 를 건다 (예: 기능 구현 → contracts 초안, qa test-cases).
    - 각 Task 의 `[team]` 은 40 팀 구성서에 있는 팀 id 만 사용한다.
    - 예시 Task(T-001 예시 Task)는 지운다.

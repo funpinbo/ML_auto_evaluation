@@ -13,7 +13,8 @@
 규칙 우선순위: user/02 개발 표준 > user/03 아키텍처 철학 > project 분석서 > team charter > LTM.
 
 ## 파이프라인
-`/aidlc-init` → (사용자 작성) → `/aidlc-interpret` → `/aidlc-analyze` → `/aidlc-teams` → `/aidlc-plan` → `/aidlc-run [N]` 반복. 언제든 `/aidlc-status`.
+`/aidlc-init` → (사용자 작성) → `/aidlc-interpret` → `/aidlc-analyze` → `/aidlc-teams` → `/aidlc-plan` → `/aidlc-run [N]` 반복 → `/aidlc-docs`. 언제든 `/aidlc-status`.
+사용 설명서: `docs/aidlc/README.md`
 
 ## 팀 운영
 - 카탈로그 17개 팀: product, design, architecture / backend, frontend, mobile, integration, dba / data, analytics, ml / qa / cicd, infra, ops / security, docs
@@ -21,6 +22,11 @@
 - 팀 Agent 는 두 모드: **작업 모드**(자기 소유 범위만 수정) / **리뷰 모드**(수정 없이 charter §9 기준 검증, STM §7 에 PASS/FAIL).
 - Task 완료 전 리뷰 게이트: 변경이 해당하는 리뷰 팀 전체가 검증한다. 코드 변경 Task 는 qa 리뷰가 항상 필수.
 - 다른 팀 소유 범위가 필요하면 직접 고치지 말고 STM §5 에 `[팀id]` Task 후보로 남긴다.
+
+## 문서 (docs/)
+- `docs/aidlc/` = 프레임워크 사용 설명서. 프로젝트 작업 중 수정하지 않는다.
+- `docs/api/reference.md` 는 `aidlc/scripts/openapi_docs.py` 가 OpenAPI 명세에서 생성한다. **직접 편집 금지** — 명세를 고치고 재생성.
+- API 명세(`openapi: 3.x`)를 수정하면 Hook 이 레퍼런스 재생성을 알린다. 같은 Task 안에서 재생성까지 끝낸다.
 
 ## 쓰기 소유권 (반드시 지킬 것)
 - `workspace/user/*` 는 Agent 가 **수정하지 않는다**. 문제는 00 해석서의 질문으로 남긴다. (사용자가 직접 요청한 경우만 예외)

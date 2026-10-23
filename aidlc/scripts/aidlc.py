@@ -2,7 +2,7 @@
 """AI-DLC CLI.
 
   aidlc.py init [--force]          템플릿으로 workspace/ 생성 (user, project, teams, memory)
-  aidlc.py check [user|project]    Gate 검사: 미작성 {{ }} 플레이스홀더 탐지 (실패 시 exit 1)
+  aidlc.py check [user|project|docs]  Gate 검사: 미작성 {{ }} 플레이스홀더 탐지 (실패 시 exit 1)
   aidlc.py teams                   팀 카탈로그 목록 (core / conditional)
   aidlc.py new-team <id...|--core> 카탈로그 기반 팀 charter + 팀 Agent 생성 (카탈로그 밖 id 도 허용)
   aidlc.py status                  Plan/Task/LTM/STM 상태와 미처리 cascade 출력
@@ -61,11 +61,18 @@ def find_placeholders(path: Path) -> list[tuple[int, str]]:
 
 def cmd_check(args: list[str]) -> int:
     layer = args[0] if args else "user"
-    target = WS / layer
+    if layer == "docs":
+        # 프로젝트 문서: docs/ 전체 (프레임워크 문서 docs/aidlc 와 자동 생성 레퍼런스 제외)
+        target, base = ROOT / "docs", ROOT / "docs"
+        files = sorted(p for p in target.rglob("*.md")
+                       if not p.relative_to(target).parts[0] == "aidlc" and p.name != "reference.md") if target.is_dir() else []
+    else:
+        target, base = WS / layer, WS
+        files = sorted(target.glob("*.md")) if target.is_dir() else []
     if not target.is_dir():
-        print(f"{target.relative_to(ROOT)} 가 없습니다. /aidlc-init 을 먼저 실행하세요.")
+        hint = "/aidlc-docs" if layer == "docs" else "/aidlc-init"
+        print(f"{target.relative_to(ROOT)} 가 없습니다. {hint} 을 먼저 실행하세요.")
         return 1
-    files = sorted(target.glob("*.md"))
     if layer == "project":
         expected = {p.name for p in (TEMPLATES / "project").glob("*.md")}
         missing = sorted(expected - {f.name for f in files})
@@ -78,7 +85,7 @@ def cmd_check(args: list[str]) -> int:
         hits = find_placeholders(f)
         total += len(hits)
         status = "OK  " if not hits else "TODO"
-        print(f"{status}  {f.relative_to(WS)}  ({len(hits)}개 미작성)")
+        print(f"{status}  {f.relative_to(base)}  ({len(hits)}개 미작성)")
         for lineno, label in hits[:50]:
             print(f"        L{lineno}: {{{{{label}}}}}")
     ok = total == 0 and not missing

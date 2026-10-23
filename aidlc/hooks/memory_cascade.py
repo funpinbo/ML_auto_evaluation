@@ -274,6 +274,18 @@ def _touches_memory(mem: Memory, payload: dict) -> bool:
         return False
 
 
+def _touches_api_spec(payload: dict) -> bool:
+    ti = payload.get("tool_input") or {}
+    fp = Path(ti.get("file_path") or "")
+    if fp.suffix not in (".json", ".yaml", ".yml") or "examples" in fp.parts or not fp.is_file():
+        return False
+    try:
+        head = fp.read_text(encoding="utf-8", errors="ignore")[:2000]
+    except OSError:
+        return False
+    return re.search(r'^\s*"?openapi"?\s*:\s*"?3\.', head, re.M) is not None
+
+
 def handle(event: str, payload: dict, root: Path) -> int:
     mem = Memory(root)
     if event == "status":
@@ -292,6 +304,12 @@ def handle(event: str, payload: dict, root: Path) -> int:
     if event == "session-start":
         _emit({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": note + mem.summary()}})
     elif event == "post-tool-use":
+        if _touches_api_spec(payload):
+            _emit({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": (
+                "[AI-DLC docs] OpenAPI 명세가 변경되었습니다. 이 Task 를 마치기 전에 "
+                "`python3 aidlc/scripts/openapi_docs.py render <spec> -o docs/api` 로 레퍼런스를 다시 생성하고, "
+                "변경이 docs/api/README.md(인증·에러·버저닝)에 영향을 주면 함께 갱신하세요. 깨지는 변경이면 architecture 리뷰 대상입니다.")}})
+            return 0
         if not (_touches_memory(mem, payload) or archived):
             return 0
         step = mem.pending()

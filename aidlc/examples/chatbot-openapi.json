@@ -1,0 +1,190 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Chatbot API (샘플)",
+    "version": "1.0.0",
+    "description": "AI-DLC 문서 생성기 데모용 샘플 명세입니다. 대화(Conversation)를 만들고 메시지를 보내면 FAQ 근거와 함께 답변을 받습니다."
+  },
+  "servers": [
+    {"url": "https://api.example.com/v1", "description": "운영"},
+    {"url": "http://localhost:8000/v1", "description": "로컬"}
+  ],
+  "security": [{"bearerAuth": []}],
+  "tags": [
+    {"name": "conversations", "description": "대화 세션 생성·조회·종료"},
+    {"name": "messages", "description": "대화 내 메시지 전송과 이력"},
+    {"name": "faq", "description": "답변 근거가 되는 FAQ 검색"},
+    {"name": "system", "description": "상태 확인"}
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["system"], "summary": "헬스 체크", "operationId": "getHealth", "security": [],
+        "responses": {"200": {"description": "정상", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string", "example": "ok"}}}}}}}
+      }
+    },
+    "/conversations": {
+      "post": {
+        "tags": ["conversations"], "summary": "대화 생성", "operationId": "createConversation",
+        "description": "새 대화 세션을 만듭니다. `Idempotency-Key` 헤더를 보내면 같은 키의 재시도는 같은 대화를 반환합니다.",
+        "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ConversationCreate"}}}},
+        "responses": {
+          "201": {"description": "생성됨", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Conversation"}}}},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      },
+      "get": {
+        "tags": ["conversations"], "summary": "대화 목록", "operationId": "listConversations",
+        "parameters": [{"$ref": "#/components/parameters/Cursor"}, {"$ref": "#/components/parameters/Limit"},
+                       {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["open", "closed"]}, "description": "상태 필터"}],
+        "responses": {
+          "200": {"description": "성공", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ConversationPage"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    },
+    "/conversations/{conversationId}": {
+      "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
+      "get": {
+        "tags": ["conversations"], "summary": "대화 조회", "operationId": "getConversation",
+        "responses": {
+          "200": {"description": "성공", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Conversation"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "delete": {
+        "tags": ["conversations"], "summary": "대화 종료", "operationId": "closeConversation",
+        "description": "대화를 종료합니다. 종료된 대화에는 메시지를 보낼 수 없습니다.",
+        "responses": {"204": {"description": "종료됨"}, "404": {"$ref": "#/components/responses/NotFound"}}
+      }
+    },
+    "/conversations/{conversationId}/messages": {
+      "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
+      "post": {
+        "tags": ["messages"], "summary": "메시지 전송 (답변 생성)", "operationId": "sendMessage",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessageCreate"}}}},
+        "responses": {
+          "200": {"description": "봇 답변", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BotReply"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"description": "종료된 대화", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "429": {"$ref": "#/components/responses/TooManyRequests"}
+        }
+      },
+      "get": {
+        "tags": ["messages"], "summary": "메시지 이력", "operationId": "listMessages",
+        "parameters": [{"$ref": "#/components/parameters/Cursor"}, {"$ref": "#/components/parameters/Limit"}],
+        "responses": {"200": {"description": "성공", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessagePage"}}}}}
+      }
+    },
+    "/faq/search": {
+      "get": {
+        "tags": ["faq"], "summary": "FAQ 검색", "operationId": "searchFaq",
+        "parameters": [{"name": "q", "in": "query", "required": true, "schema": {"type": "string", "example": "환불"}, "description": "검색어"},
+                       {"$ref": "#/components/parameters/Limit"}],
+        "responses": {"200": {"description": "검색 결과", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/FaqHit"}}}}}}
+      }
+    },
+    "/legacy/ask": {
+      "post": {
+        "tags": ["messages"], "summary": "단발 질문 (구버전)", "deprecated": true, "operationId": "legacyAsk",
+        "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessageCreate"}}}},
+        "responses": {"200": {"description": "답변", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BotReply"}}}}}
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT", "description": "`Authorization: Bearer <token>`"}
+    },
+    "parameters": {
+      "ConversationId": {"name": "conversationId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}, "description": "대화 ID"},
+      "Cursor": {"name": "cursor", "in": "query", "schema": {"type": "string"}, "description": "이전 응답의 `next_cursor`"},
+      "Limit": {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}, "description": "페이지 크기"},
+      "IdempotencyKey": {"name": "Idempotency-Key", "in": "header", "schema": {"type": "string", "example": "b5f1c0e2-req-001"}, "description": "재시도 안전 키"}
+    },
+    "responses": {
+      "BadRequest": {"description": "요청 검증 실패", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "Unauthorized": {"description": "인증 실패", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "NotFound": {"description": "리소스 없음", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "TooManyRequests": {"description": "요청 한도 초과 (`Retry-After` 헤더 참고)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+    },
+    "schemas": {
+      "ConversationCreate": {
+        "type": "object",
+        "properties": {
+          "channel": {"type": "string", "enum": ["web", "kakao", "slack"], "description": "유입 채널"},
+          "locale": {"type": "string", "default": "ko-KR", "description": "응답 언어"}
+        },
+        "required": ["channel"]
+      },
+      "Conversation": {
+        "allOf": [
+          {"$ref": "#/components/schemas/ConversationCreate"},
+          {"type": "object", "properties": {
+            "id": {"type": "string", "format": "uuid"},
+            "status": {"type": "string", "enum": ["open", "closed"]},
+            "created_at": {"type": "string", "format": "date-time"}
+          }, "required": ["id", "status", "created_at"]}
+        ]
+      },
+      "ConversationPage": {
+        "type": "object",
+        "properties": {
+          "data": {"type": "array", "items": {"$ref": "#/components/schemas/Conversation"}},
+          "next_cursor": {"type": ["string", "null"], "description": "다음 페이지 커서. 마지막 페이지면 null"}
+        },
+        "required": ["data"]
+      },
+      "MessageCreate": {
+        "type": "object",
+        "properties": {"text": {"type": "string", "example": "환불은 며칠 걸리나요?", "description": "사용자 메시지 (최대 2000자)"}},
+        "required": ["text"]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "format": "uuid"},
+          "role": {"type": "string", "enum": ["user", "bot", "agent"]},
+          "text": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "MessagePage": {
+        "type": "object",
+        "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/Message"}}, "next_cursor": {"type": ["string", "null"]}}
+      },
+      "BotReply": {
+        "type": "object",
+        "properties": {
+          "message": {"$ref": "#/components/schemas/Message"},
+          "sources": {"type": "array", "items": {"$ref": "#/components/schemas/FaqHit"}, "description": "답변 근거 FAQ"},
+          "handoff": {"type": "boolean", "description": "상담원 연결 권장 여부"}
+        },
+        "required": ["message", "sources", "handoff"]
+      },
+      "FaqHit": {
+        "type": "object",
+        "properties": {
+          "faq_id": {"type": "string", "example": "FAQ-102"},
+          "title": {"type": "string", "example": "환불 처리 기간"},
+          "score": {"type": "number", "example": 0.87, "description": "유사도 0~1"},
+          "url": {"type": "string", "format": "uri"}
+        }
+      },
+      "Error": {
+        "type": "object",
+        "description": "모든 4xx/5xx 응답의 공통 포맷",
+        "properties": {
+          "error": {"type": "object", "properties": {
+            "code": {"type": "string", "example": "CONVERSATION_NOT_FOUND", "description": "기계가 읽는 에러 코드"},
+            "message": {"type": "string", "example": "대화를 찾을 수 없습니다.", "description": "사람이 읽는 메시지"},
+            "trace_id": {"type": "string", "example": "4bf92f3577b34da6", "description": "문의 시 전달할 추적 ID"}
+          }, "required": ["code", "message"]}
+        },
+        "required": ["error"]
+      }
+    }
+  }
+}
