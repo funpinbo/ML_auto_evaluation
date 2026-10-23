@@ -1,9 +1,9 @@
 ---
-status: idle
-task: none
-team: none
+status: active
+task: T-026
+team: architecture
 outcome: none
-opened_at: none
+opened_at: 2026-10-23T18:49:49+00:00
 ---
 # Short-term Memory
 
@@ -13,11 +13,12 @@ opened_at: none
 > frontmatter 값: status(idle|active|closed) / outcome(done|partial|blocked)
 
 ## 1. 목표
-- Task: (T-ID 와 제목, tasks.md 에서 복사)
-- 완료 조건(DoD):
+- Task: T-026 [architecture] loop-cli §7 / control.schema `seq` 보강: 루프 도중 `.control.json` 이 깨지거나 삭제된 경우 대시보드가 다음 seq 를 `max(이전 seq(없으면 0), loop-status.baseline_seq) + 1` 로 쓰는지 결정·명시(또는 FR-005 AC-18 복구 경로로 대체) — I-16, FR-005 | deps: T-004
+- 완료 조건(DoD): loop-cli.md·control.schema·ADR-004 정합, FR-005 AC 와 모순 없음 (출처: STM-0006 §5) + user/02 §10 공통 DoD
 
 ## 2. 로드한 컨텍스트
-- 관련 FR / 팀 charter / LTM 항목:
+- 관련: LTM I-16(루프 도중 .control.json 깨짐/삭제 → seq 1 ≤ baseline_seq → CLI 가 새 pause/resume 무시), D-04(파일당 쓰기 주체 1개), D-09·D-10(exit code, episode 상한), stories/FR-005.md(AC-18 복구 경로)
+- 근거: workspace/project/contracts/loop-cli.md §7, control.schema.json `seq`, loop-status.schema.json `baseline_seq`, ADR-004
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->
