@@ -28,7 +28,7 @@ related: [CON-01, CON-02, 원칙 3, 03 §4, 03 §9, 02 §1, 02 §9, 02 §10, I-2
    - 주의: `jsonschema-specifications 2025.9.1` 은 02 §9 "최근 1년 내 릴리스" 경계에 걸린다(전이·dev 전용·최신판이라 수용, 아래 예외 표). 새 릴리스가 있으면 올리고, 없으면 릴리스 전 pip-audit 결과로 판단한다.
 3. 표준 라이브러리로 직접 구현: SSE 직렬화, 파일 감시(ADR-008), frontmatter 파싱(Hook 함수 재사용, ADR-009), JSONL 집계, 런처, 로깅. YAML·dotenv·requests 등 추가 금지.
 4. 새 런타임 의존성을 더하려면 새 ADR 필요(architecture 리뷰). 새 **직접** dev 의존성도 이 ADR 개정 또는 새 ADR 필요(03 §9).
-5. **02 §9 적용 범위와 예외**: 02 §9 의 라이선스(MIT/Apache/BSD)·"최근 1년 내 릴리스" 기준은 **직접 도입 결정**(우리가 requirements 에 직접 고르는 패키지)에 적용한다. 직접 의존성은 모두 기준을 충족한다. 직접 의존성이 끌고 오는 전이 의존성은 회피할 수 없으므로 아래처럼 근거와 함께 기록하고 수용한다. 전이 의존성까지 02 §9 가 적용되는지는 **사용자 확인 대기**(00 해석서 질문 후보) — 답이 "적용" 이면 이 표를 다시 판정한다.
+5. **02 §9 적용 범위와 예외**: 02 §9 의 라이선스(MIT/Apache/BSD)·"최근 1년 내 릴리스" 기준은 **직접 도입 결정**(우리가 requirements 에 직접 고르는 패키지)에 적용한다. 런타임 직접 의존성 3개(fastapi·uvicorn·pydantic)와 dev 직접 의존성은 **httpx 를 빼고** 모두 기준을 충족한다 — httpx 0.28.1(직접 dev, 2024-12)은 PyPI 최신판이지만 1년 경계 밖이라 아래 표에 직접 의존성 예외로 기록하고 httpx2 전환(I-22)까지 임시 수용한다. 직접 의존성이 끌고 오는 전이 의존성은 회피할 수 없으므로 아래처럼 근거와 함께 기록하고 수용한다. 전이 의존성까지 02 §9 가 적용되는지는 **사용자 확인 대기**(00 해석서 질문 후보) — 답이 "적용" 이면 이 표를 다시 판정한다.
 
    | 패키지 | 구분 | 기준 | 상태 | 수용 근거 |
    |--------|------|------|------|-----------|
@@ -36,10 +36,14 @@ related: [CON-01, CON-02, 원칙 3, 03 §4, 03 §9, 02 §1, 02 §9, 02 §10, I-2
    | certifi 2026.10.23 | dev 전이(httpx) | 라이선스 | MPL-2.0 | dev 전용, 사용자 설치·재배포 안 함. 파일 단위 약한 copyleft 라 수정·재배포하지 않으면 의무 없음. httpx2 전환 시 truststore 로 대체 예정 |
    | pathspec 1.1.1 | dev 전이(mypy) | 라이선스 | MPL-2.0 | dev 전용, 재배포 안 함(위와 같음) |
    | h11 0.16.0 | 런타임 전이(uvicorn) | 1년 내 릴리스 | 2025-04 | PyPI 최신판(새 릴리스 없음). uvicorn 기본 구현 필수 |
-   | httpx 0.28.1 / httpcore 1.0.9 | dev(직접/전이) | 1년 내 릴리스 | 2024-12 / 2025-04 | 최신판, dev 전용 임시 수용 — httpx2 전환으로 해소 예정(I-22) |
+   | httpx 0.28.1 | **dev 직접** | 1년 내 릴리스 | 2024-12 | 유일한 직접 의존성 예외. 최신판, dev 전용 임시 수용 — httpx2 전환으로 해소 예정(I-22) |
+   | httpcore 1.0.9 | dev 전이(httpx) | 1년 내 릴리스 | 2025-04 | 최신판, dev 전용 — httpx2 전환 시 함께 해소(I-22) |
    | colorama 0.4.6 | dev 전이(pytest, Windows 만) | 1년 내 릴리스 | 2022-10 | 최신판, dev 전용 |
    | jsonschema-specifications 2025.9.1 | dev 전이(jsonschema) | 1년 내 릴리스 | 2025-09 | 최신판, dev 전용 |
+   | referencing 0.37.0 | dev 전이(jsonschema) | 1년 내 릴리스 | 2025-10-13 | 최신판, dev 전용 |
+   | mypy_extensions 1.1.0 | dev 전이(mypy) | 1년 내 릴리스 | 2025-04-22 | 최신판, dev 전용 |
 
+   - 판정 근거(2026-10-23, 1년 경계 = 2025-10-23): `requirements.txt` 14개 + `requirements-dev.txt` 22개 = 36개 핀 전수. 릴리스일은 PyPI JSON API(`https://pypi.org/pypi/<name>/json`, 해당 버전 파일의 최초 `upload_time`), 라이선스는 `monitor/.venv` 설치 메타데이터(`License-Expression`/Classifier, 미설치 colorama 는 PyPI 메타데이터 BSD). 경계 밖은 위 표 7건(h11·httpx·httpcore·colorama·jsonschema-specifications·referencing·mypy_extensions)뿐이고 모두 PyPI 최신판. 라이선스 예외는 위 표 3건뿐.
    - 표의 상태는 릴리스 전 pip-audit(임시 venv)로 취약점 여부를 함께 확인한다. 표에 없는 패키지가 기준을 벗어나면 이 ADR 을 개정한다.
 
 ## Alternatives
@@ -57,3 +61,4 @@ related: [CON-01, CON-02, 원칙 3, 03 §4, 03 §9, 02 §1, 02 §9, 02 §10, I-2
 ## 변경 이력
 - 2026-10-23 T-021: Decision 2 dev 의존성에 jsonschema 4.26.0(+referencing, jsonschema-specifications, rpds-py, attrs, 모두 MIT) 추가(LTM I-08).
 - 2026-10-23 T-007 architecture 리뷰 조치: Decision 2 에 mypy 2.4.0(+mypy_extensions, librt, ast_serialize, pathspec) 추가(02 §10·I-29), pip-audit 를 dev 의존성에서 빼고 릴리스 전 임시 venv 실행으로 변경, httpx 0.28.1 유지(httpx2 전환은 ops 로거 수정 후, I-22). Decision 1 에 fastapi 전이 opentelemetry-api·annotated-doc 기록(I-22). Decision 5(02 §9 적용 범위·전이 의존성 예외 표) 신설, Consequences 의 "라이선스 MIT/BSD/Apache 만" 정정. 02 §9 의 전이 의존성 적용 여부는 사용자 확인 대기.
+- 2026-10-23 T-007 architecture 재리뷰 조치(문구만): Decision 5 의 '직접 의존성은 모두 기준을 충족' 을 httpx 0.28.1(직접 dev, 2024-12) 예외 반영으로 정정, 예외 표 httpx/httpcore 를 직접/전이 행으로 분리, 1년 경계 밖 누락분 referencing 0.37.0(2025-10-13)·mypy_extensions 1.1.0(2025-04-22) 추가, 36개 핀 전수 판정 방법(PyPI JSON·venv 메타데이터) 기록.
