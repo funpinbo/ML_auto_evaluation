@@ -7,7 +7,7 @@
 | 명령 | 설명 | 종료 코드 |
 |------|------|----------|
 | `init [--force]` | 템플릿으로 `workspace/` 생성. 기존 파일은 건너뜀, `--force` 시 덮어씀 | 0 |
-| `check [user\|project\|docs]` | 미작성 `{{ }}` 플레이스홀더 검사 (HTML 주석 안은 무시). 기본 `user` | PASS 0 / FAIL 1 |
+| `check [user\|project\|docs]` | 미작성 `{{내용}}` 플레이스홀더 검사. HTML 주석 안과 내용이 빈 `{{ }}`(안내문의 표기 설명)는 무시. 기본 `user` | PASS 0 / FAIL 1 |
 | `teams` | 팀 카탈로그 목록 (tier, 그룹, 리뷰 게이트, 생성 조건) | 0 |
 | `new-team <id...>` | 카탈로그 기반 charter + 팀 Agent 생성 | 0 / 잘못된 id 1 |
 | `new-team --core` | 필수 6팀 일괄 생성 | 0 |
