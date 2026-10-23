@@ -55,7 +55,9 @@ def find_placeholders(path: Path) -> list[tuple[int, str]]:
     hits = []
     for lineno, line in enumerate(text.splitlines(), 1):
         for m in PLACEHOLDER_RE.finditer(line):
-            hits.append((lineno, m.group(1).strip()))
+            label = m.group(1).strip()
+            if label:  # 빈 `{{ }}` 는 안내문의 표기 설명이지 미작성 항목이 아니다
+                hits.append((lineno, label))
     return hits
 
 

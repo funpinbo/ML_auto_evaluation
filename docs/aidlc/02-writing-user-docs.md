@@ -54,3 +54,15 @@ data-analyst 가 EDA 를 하는 입력입니다.
 
 ## 고친 뒤에는
 User 문서를 고치면 `/aidlc-interpret` 를 다시 실행해 해석서를 갱신하세요. 분석 이후 단계에 큰 영향을 주는 변경이면 `/aidlc-analyze` 부터 다시 돌립니다.
+
+## 작성 예시: AI-DLC Monitor
+이 저장소의 `workspace/user/` 에 실제로 채운 4개 문서가 있습니다. 로컬 모니터링 대시보드(Vue + FastAPI)를 만드는 프로젝트입니다.
+
+| 문서 | 참고할 점 |
+|------|----------|
+| [01 개요·기능 요구서](../../workspace/user/01-project-overview.md) | FR 마다 Given/When/Then 수용 기준, 확인 안 된 사항은 §10 오픈 이슈로 |
+| [02 개발 표준](../../workspace/user/02-development-standards.md) | §3 디렉토리 구조를 미리 정함, §11 Agent 금지 작업을 구체적으로 |
+| [03 아키텍처 철학](../../workspace/user/03-architecture-philosophy.md) | 원칙 3개와 동순위 없는 품질 속성 순위, §9 ADR 필수 대상 |
+| [04 데이터 정의서](../../workspace/user/04-data-definition.md) | 개인정보가 섞인 소스(DS-03)를 "읽을 필드만" 명시, 알려진 품질 문제 기록 |
+
+인프라처럼 해당 없는 항목은 비우지 않고 `N/A (이유)` 로 적었습니다.

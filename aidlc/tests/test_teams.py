@@ -46,6 +46,21 @@ class CatalogTest(unittest.TestCase):
             self.assertIn(must, ids)
 
 
+class PlaceholderTest(unittest.TestCase):
+    def test_ignores_notation_and_comments(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            doc = tmp / "doc.md"
+            doc.write_text("> `{{ }}` = 필수\n<!-- {{주석}} -->\n| URL | `{{URL}}` |\n이름: {{이름}}\n", encoding="utf-8")
+            self.assertEqual(cli.find_placeholders(doc), [(3, "URL"), (4, "이름")])
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_blank_templates_still_fail(self):
+        for tpl in (REPO / "aidlc" / "templates" / "user").glob("*.md"):
+            self.assertTrue(cli.find_placeholders(tpl), tpl.name)
+
+
 class NewTeamTest(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
