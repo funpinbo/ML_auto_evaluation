@@ -1,6 +1,6 @@
 ---
-rev: 6
-last_merged_stm: 6
+rev: 7
+last_merged_stm: 7
 ---
 # Long-term Memory
 
@@ -34,6 +34,7 @@ last_merged_stm: 6
 | D-21 | FR-001 단계 판정(A11 확정안, PO 화면 리뷰 전까지 assumption): 상태 4종(완료/진행/대기/확인 불가 — 확인 불가는 판정 파일이 깨졌을 때만), 단계 독립 판정, 현재 단계 = 완료가 아닌 최소 번호, 단계 4 완료 = tasks `rev ≥ 1` + Phase 에 Task ≥ 1, 단계 5 완료 = 전 Phase `[x]` + 미처리 cascade 없음 + STM 비활성, 단계 6 완료 = docs Gate PASS + `docs/README.md` 존재 | 템플릿 직후 오판 방지(실행 확인) | Phase 존재만 확인 | (STM-0006, stories/FR-001 §2) |
 | D-22 | FR-005 화면 라벨 6종(V1~V6)과 종료 사유 문구는 stories/FR-005 §2.1·§2.3 이 단일 기준. qa 는 문구 포함 여부로 검증 | 문구 흩어짐 방지 | - | (STM-0006) |
 | D-23 | KPI 측정 규칙: KPI-01 타이머 = 질문 읽기 시작~답, 첫 화면 = 스크롤·클릭 없는 영역(창 크기 기록), 정답은 파일에서 직접(`aidlc.py status` 금지). KPI-02 타이머 = 실행 동작~상단 행 표시, 다운로드 제외 | 측정 재현성 | - | (STM-0006, uat/uat-checklist) |
+| D-24 | 테스트 홈 격리 3겹: `pytest_configure` 세션 치환 + autouse 테스트별 치환 + `sys.addaudithook` 가드(`RealHomeAccessError`). 가드는 제거 불가라 `enabled` 플래그로 켜고 끄며 음성 테스트는 `home_guard.expect()` 사용. 위반은 예외 전에 기록되어 삼켜도 teardown 에서 드러남 | D-16 강화, security 리뷰 | function 범위만 | (STM-0007) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -55,6 +56,8 @@ last_merged_stm: 6
 - Host 헤더는 정확히 1개여야 한다 — 판정은 서버 파서(h11)에 맡기지 않고 가드에서 한다 (STM-0005, security 리뷰)
 - 스토리 AC 는 `AC-n (요약)` + Given/When/Then, 테스트는 test-strategy §4 S-xx/P-xx 를 참조만 (STM-0006)
 - 패널 화면 상태는 `meta.status` 5종(ok/partial/empty/error/warming)으로 스토리마다 표를 둔다 (STM-0006)
+- 가드 음성 테스트는 실제 홈 아래 **존재하지 않는 이름**만 쓰고 `RealHomeAccessError` 를 단언해 "시스템 호출 전 차단" 을 증명한다(실제 파일을 읽지 않음) (STM-0007)
+- 감사 hook 가드는 인자 없는 호출(None 인자, 예: `os.listdir()`)을 cwd 로 해석해 판정해야 한다 (STM-0007, security 리뷰)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -67,7 +70,7 @@ last_merged_stm: 6
 | I-06 | 보안 통제가 모두 "요구" 상태(구현 전). 구현 후 P/N/W/T 항목을 실제 실행 근거와 함께 재확인 필요 | 보안 | 열림: backend 구현 후 security 리뷰 | (STM-0003) |
 | I-07 | tasks.md T-002 DoD 경로 `workspace/teams/security/` 가 실제 경로 `workspace/project/security/` 와 불일치 | 문서 정합성 | 열림 → cascade 2/3 에서 정정 | (STM-0003) |
 | ~~I-08~~ | jsonschema(dev) 가 ADR-006 dev 목록에 없음 | 문서 정합성 | 열림 → T-021 | (STM-0004) → **해소** (STM-0005, ADR-011 §4·§5 / ADR-006) |
-| I-09 | 홈 격리가 function 범위라 session 범위 fixture·수집 시점 import 는 실제 HOME 을 볼 수 있음, `CLAUDE_CONFIG_DIR` 미처리 | 테스트 신뢰성·개인정보 | 열림 → T-023 (T-005 전) | (STM-0004) |
+| ~~I-09~~ | 홈 격리가 function 범위라 session 범위 fixture·수집 시점 import 는 실제 HOME 을 볼 수 있음, `CLAUDE_CONFIG_DIR` 미처리 | 테스트 신뢰성·개인정보 | 열림 → T-023 (T-005 전) | (STM-0004) → **해소** (STM-0007: 3겹 격리 + audit-hook 가드, 95 passed) |
 | I-10 | 하드 링크는 `resolve()` 경계 검사로 탐지 불가 | 경로 이탈 | 열림 → T-022 (방침 결정) | (STM-0004) |
 | I-11 | 30일 JSONL 329~658 MB 크기는 선형 추정(pad 9000~18000) | 성능 테스트 정확도 | 열림 → T-013 실측 | (STM-0004) |
 | I-12 | `jsonschema-specifications 2025.9.1` 이 02 §9 "최근 1년 내 릴리스" 경계(약 13개월) — dev·전이 전용이라 수용 | 의존성 정책 | 감시 → T-007 고정 시 최신 확인 | (STM-0005) |
@@ -77,6 +80,7 @@ last_merged_stm: 6
 | I-16 | 루프 도중 `.control.json` 이 깨지거나 삭제되면 대시보드가 seq 1 을 써서 `baseline_seq` 이하가 되어 CLI 가 새 pause/resume 을 무시 | FR-005 신뢰성 | 열림 → T-026 (T-008 전) | (STM-0006) |
 | I-17 | FR-002 Phase 진행률 바: `plan` SSE topic 이 M2 라 P1 에서 실시간 갱신 보장 안 됨(01 §5.1 흐름 3 과 어긋남) | UX | 열림 → T-012 에서 `tasks` 이벤트 시 `/plan` 재조회 | (STM-0006) |
 | I-18 | PO 미답 질문: Q-P1(단계 3 에 `.claude/agents` 요구?), Q-P2(docs Gate 빈 대상), Q-P3(run.bat 실패 시 창 유지), Q-P4(R-01 실패 시 후퇴안은 01 §10 과 다름 → PO 결정) | 수용 기준 | 열림 → 사용자에게 질문 | (STM-0006) |
+| I-19 | home_guard 빈틈: 인자 없는 `os.listdir()` 통과(None 인자), 경로 판정 중 OSError 시 통과, 원래 `XDG_CONFIG_HOME/claude` 미등록. 가드 밖: 정수 fd·`dir_fd`·`os.stat`/`os.readlink`·서브프로세스 서버 — test-strategy 에 미기재 | 테스트 격리 | 열림 → T-013 (비차단) | (STM-0007) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -92,6 +96,7 @@ last_merged_stm: 6
 ### qa
 - (아직 없음)
 - fixture 9종(workspace, jsonl_gen, claude_home, hashing, markers, contracts, runtime_files, reference_parser) + smoke 72건. 실행: `monitor/.venv/bin/python -m pytest monitor/backend/tests -q` (STM-0004)
+- home_guard + test_home_guard(21건). 전체 95 passed. 반쪽 커밋 재개 때 실패 원인은 `import os` 누락 하나였다 (STM-0007)
 
 ### cicd
 - (아직 없음)
@@ -125,6 +130,7 @@ last_merged_stm: 6
 - 중단된 세션을 이어받을 때는 테스트 통과만 보지 말고 모듈을 끝까지 읽고 `git status`·커밋과 대조해 반쯤 쓴 파일이 없는지 확인한다 (STM-0004)
 - Task 문구에 적힌 문서 절 번호는 틀릴 수 있다(20 §8 → 실제 §5). 수정 전에 grep 으로 위치를 확인한다 (STM-0005)
 - 가정을 확정할 때는 프레임워크 스크립트를 실제로 돌려 경계 동작(템플릿 직후 상태, 빈 대상 PASS)을 확인해야 오판을 막는다 (STM-0006)
+- 중단 후 커밋된 반쪽 변경은 실패 원인이 사소한 경우가 많다 — 갈아엎기 전에 먼저 실행해 원인을 확인한다 (STM-0007)
 
 ## 6. 용어집 (Glossary)
 | 용어 | 정의 |
