@@ -12,9 +12,10 @@
       "const": 1
     },
     "seq": {
-      "description": "Monotonic request counter. Every write (pause or resume, including idempotent re-writes) sets seq = max(prev, baseline) + 1, where prev = seq of the existing .control.json (0 if missing or broken) and baseline = baseline_seq of loop-status.json (0 if missing or not valid against loop-status.schema.json). Both files are re-read on every write (no in-memory cache) under one in-process lock. This keeps a write after the control file was deleted or corrupted mid-loop above the running loop's baseline_seq, so the CLI applies it (I-16). The CLI compares only seq > baseline_seq and never tracks seq changes, so a re-created file may reuse an earlier seq value. loop-cli.md §7, ADR-004 Decision 1.1.",
+      "description": "Monotonic request counter. Every write (pause or resume, including idempotent re-writes) sets seq = max(prev, baseline) + 1, where prev = seq of the existing .control.json (0 if missing or broken) and baseline = baseline_seq of loop-status.json (0 if missing or not valid against loop-status.schema.json). Both files are re-read on every write (no in-memory cache) under one in-process lock. This keeps a write after the control file was deleted or corrupted mid-loop above the running loop's baseline_seq, so the CLI applies it (I-16). The CLI compares only seq > baseline_seq and never tracks seq changes, so a re-created file may reuse an earlier seq value. Readers (CLI and dashboard) accept seq only as a JSON integer literal (no bool, no 7.0, no exponent form) within 1..9007199254740991 (2^53-1, JS-safe) - same predicate on both sides; JSON Schema 'integer' alone accepts 7.0, so the extra predicate is mandatory. Otherwise the file is broken. If max(prev, baseline) + 1 would exceed the maximum, the dashboard does not write (500 CONTROL_WRITE_FAILED, existing file kept). loop-cli.md §2.1, §7, ADR-004 Decision 1.1.",
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 9007199254740991
     },
     "state": {
       "description": "User intent. 'pause' = stop at the next cycle boundary and wait; 'running' = resume / do not pause.",

@@ -21,9 +21,10 @@
       "enum": ["running", "paused", "ended"]
     },
     "baseline_seq": {
-      "description": ".control.json seq observed at loop-start (0 if the control file was missing or broken). Only control requests with seq > baseline_seq apply to this run.",
+      "description": ".control.json seq observed at loop-start (0 if the control file was missing or broken). Only control requests with seq > baseline_seq apply to this run. Accepted by the dashboard only as a JSON integer literal (no bool, no 7.0, no exponent form) within 0..9007199254740991 (2^53-1); otherwise the dashboard treats baseline as 0 (loop-cli.md §7.1).",
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "iterations_total": {
       "description": "N passed to loop-start (aidlc-run allows 1..10).",
