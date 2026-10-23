@@ -1,0 +1,182 @@
+{
+  "generated_at_utc": "2026-10-23T07:13:02+00:00",
+  "privacy": "집계값만 포함. 본문/ID 값 미포함.",
+  "files": {
+    "count": 4,
+    "main": 1,
+    "subagent": 3,
+    "total_bytes": 3494823,
+    "per_file": [
+      {
+        "kind": "subagent",
+        "bytes": 237544,
+        "lines": 57,
+        "usage_lines": 22,
+        "parse_sec": 0.0013
+      },
+      {
+        "kind": "subagent",
+        "bytes": 322390,
+        "lines": 87,
+        "usage_lines": 39,
+        "parse_sec": 0.0015
+      },
+      {
+        "kind": "subagent",
+        "bytes": 162645,
+        "lines": 25,
+        "usage_lines": 6,
+        "parse_sec": 0.0007
+      },
+      {
+        "kind": "main",
+        "bytes": 2772244,
+        "lines": 731,
+        "usage_lines": 235,
+        "parse_sec": 0.0119
+      }
+    ]
+  },
+  "lines": {
+    "lines": 900,
+    "substring_hit": 342,
+    "substring_but_no_usage": 40,
+    "skipped_no_substring": 558
+  },
+  "usage_records_raw": 302,
+  "usage_line_share": 0.3356,
+  "substring_false_positive_share": 0.117,
+  "missing": {
+    "timestamp": 0,
+    "requestId": 0,
+    "model": 0,
+    "sessionId": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0
+  },
+  "distinct_sessions": 1,
+  "dedup": {
+    "distinct_request_ids": 127,
+    "group_size_hist": {
+      "1": 32,
+      "2": 33,
+      "3": 52,
+      "4": 5,
+      "5": 3,
+      "6": 1,
+      "7": 1
+    },
+    "dup_groups": 95,
+    "dup_lines_extra": 175,
+    "dup_rate_lines": 0.5795,
+    "dup_groups_usage_identical": 95,
+    "dup_groups_field_differs": {},
+    "dup_groups_last_is_max": 95,
+    "dup_groups_cross_file": 0,
+    "dup_groups_same_model": 95
+  },
+  "tokens_raw_sum": {
+    "input_tokens": 620,
+    "output_tokens": 694021,
+    "cache_creation_input_tokens": 1093346,
+    "cache_read_input_tokens": 54530959
+  },
+  "tokens_dedup": {
+    "input_tokens": 264,
+    "output_tokens": 254717,
+    "cache_creation_input_tokens": 425291,
+    "cache_read_input_tokens": 23810762
+  },
+  "overcount_if_no_dedup": {
+    "input_tokens": 2.348,
+    "output_tokens": 2.725,
+    "cache_creation_input_tokens": 2.571,
+    "cache_read_input_tokens": 2.29
+  },
+  "cache_hit_rate": 0.9824,
+  "models": {
+    "claude-opus-5-5": {
+      "responses": 127,
+      "input_tokens": 264,
+      "output_tokens": 254717,
+      "cache_creation_input_tokens": 425291,
+      "cache_read_input_tokens": 23810762,
+      "total_tokens": 24491034,
+      "hit_rate": 0.9824
+    }
+  },
+  "sidechain": {
+    "responses": {
+      "sidechain": 27,
+      "main": 100
+    },
+    "tokens": {
+      "main": {
+        "input_tokens": 210,
+        "output_tokens": 196748,
+        "cache_creation_input_tokens": 268804,
+        "cache_read_input_tokens": 22885778
+      },
+      "sidechain": {
+        "input_tokens": 54,
+        "output_tokens": 57969,
+        "cache_creation_input_tokens": 156487,
+        "cache_read_input_tokens": 924984
+      }
+    }
+  },
+  "zero_output_responses": 0,
+  "time": {
+    "first_utc": "2026-10-23T05:56:32.474000+00:00",
+    "last_utc": "2026-10-23T07:13:02.362000+00:00",
+    "span_hours": 1.275,
+    "bad_timestamps": 0,
+    "hourly_utc": {
+      "2026-10-23T05:00Z": {
+        "responses": 4,
+        "input_tokens": 8,
+        "output_tokens": 18886,
+        "cache_creation_input_tokens": 47915,
+        "cache_read_input_tokens": 285970
+      },
+      "2026-10-23T06:00Z": {
+        "responses": 75,
+        "input_tokens": 152,
+        "output_tokens": 165048,
+        "cache_creation_input_tokens": 191710,
+        "cache_read_input_tokens": 16057241
+      },
+      "2026-10-23T07:00Z": {
+        "responses": 48,
+        "input_tokens": 104,
+        "output_tokens": 70783,
+        "cache_creation_input_tokens": 185666,
+        "cache_read_input_tokens": 7467551
+      }
+    }
+  },
+  "q1": {
+    "today_utc": {
+      "date": "2026-10-23",
+      "responses": 127,
+      "input_tokens": 264,
+      "output_tokens": 254717,
+      "cache_creation_input_tokens": 425291,
+      "cache_read_input_tokens": 23810762
+    },
+    "last_5h_rolling": {
+      "responses": 127,
+      "input_tokens": 264,
+      "output_tokens": 254717,
+      "cache_creation_input_tokens": 425291,
+      "cache_read_input_tokens": 23810762
+    }
+  },
+  "perf": {
+    "parse_sec": 0.0154,
+    "mb": 3.495,
+    "sec_per_mb": 0.0044
+  }
+}

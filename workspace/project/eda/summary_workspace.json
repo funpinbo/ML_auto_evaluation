@@ -1,0 +1,222 @@
+{
+  "ds01_memory": {
+    "exists": true,
+    "files": {
+      "plan": {
+        "bytes": 1141,
+        "frontmatter": {
+          "current_phase": "P1",
+          "completed_phases": []
+        },
+        "frontmatter_types": {
+          "current_phase": "str",
+          "completed_phases": "list"
+        },
+        "body_lines": 26,
+        "h2_sections": [
+          "1. 전체 목표",
+          "2. Phase 로드맵",
+          "3. 마일스톤 & 의존성",
+          "4. 리스크 & 대응",
+          "5. 진행 로그 (Phase 회고)"
+        ]
+      },
+      "tasks": {
+        "bytes": 814,
+        "frontmatter": {
+          "rev": 0,
+          "synced_ltm_rev": 0
+        },
+        "frontmatter_types": {
+          "rev": "int",
+          "synced_ltm_rev": "int"
+        },
+        "body_lines": 17,
+        "h2_sections": [
+          "P1 — (Phase 이름)",
+          "Backlog (Phase 미배정)",
+          "Blocked"
+        ]
+      },
+      "long-term": {
+        "bytes": 1092,
+        "frontmatter": {
+          "rev": 0,
+          "last_merged_stm": 0
+        },
+        "frontmatter_types": {
+          "rev": "int",
+          "last_merged_stm": "int"
+        },
+        "body_lines": 26,
+        "h2_sections": [
+          "1. 결정 사항 (Decisions)",
+          "2. 확립된 패턴 & 컨벤션 (Patterns)",
+          "3. 알려진 이슈 & 리스크 (Known Issues)",
+          "4. 팀별 지식 (Team Knowledge)",
+          "5. 교훈 (Lessons Learned)",
+          "6. 용어집 (Glossary)"
+        ]
+      },
+      "short-term": {
+        "bytes": 1230,
+        "frontmatter": {
+          "status": "idle",
+          "task": "none",
+          "team": "none",
+          "outcome": "none",
+          "opened_at": "none"
+        },
+        "frontmatter_types": {
+          "status": "str",
+          "task": "str",
+          "team": "str",
+          "outcome": "str",
+          "opened_at": "str"
+        },
+        "body_lines": 35,
+        "h2_sections": [
+          "1. 목표",
+          "2. 로드한 컨텍스트",
+          "3. 작업 로그",
+          "4. 발견 사항 (LTM 후보)",
+          "5. 새로 발견된 Task (Task 후보)",
+          "6. 결과 & 인수인계",
+          "7. 리뷰 기록 (리뷰 게이트)"
+        ]
+      }
+    },
+    "stm_opened_at_iso": false,
+    "stm_none_values": [
+      "task",
+      "team",
+      "outcome",
+      "opened_at"
+    ],
+    "tasks": {
+      "phases_hook": {
+        "P1": {
+          "total": 1,
+          "checked": 0
+        }
+      },
+      "checkbox_lines": 1,
+      "format_conformant": 1,
+      "outside_phase_checkboxes": 0,
+      "team_tags": {
+        "backend": 1
+      }
+    },
+    "archive": {
+      "dir_exists": true,
+      "stm_count": 0,
+      "snapshots": 0
+    },
+    "cascade_state_file": false,
+    "pending_cascade": null,
+    "control_file_exists": false
+  },
+  "ds02_cli": {
+    "status": {
+      "exit": 0,
+      "sec": 0.069,
+      "stdout_lines": 7,
+      "stderr_lines": 0,
+      "kv_lines": 6
+    },
+    "check user": {
+      "exit": 0,
+      "sec": 0.03,
+      "stdout_lines": 6,
+      "stderr_lines": 0,
+      "items": [
+        {
+          "state": "OK",
+          "doc": "user/01-project-overview.md",
+          "placeholders": 0
+        },
+        {
+          "state": "OK",
+          "doc": "user/02-development-standards.md",
+          "placeholders": 0
+        },
+        {
+          "state": "OK",
+          "doc": "user/03-architecture-philosophy.md",
+          "placeholders": 0
+        },
+        {
+          "state": "OK",
+          "doc": "user/04-data-definition.md",
+          "placeholders": 0
+        }
+      ],
+      "gate": {
+        "result": "PASS",
+        "placeholders": 0,
+        "missing": 0
+      },
+      "unparsed_nonblank": 0
+    },
+    "check project": {
+      "exit": 1,
+      "sec": 0.032,
+      "stdout_lines": 7,
+      "stderr_lines": 0,
+      "items": [
+        {
+          "state": "MISSING",
+          "doc": "project/20-architecture-analysis.md",
+          "placeholders": null
+        },
+        {
+          "state": "MISSING",
+          "doc": "project/30-data-analysis.md",
+          "placeholders": null
+        },
+        {
+          "state": "MISSING",
+          "doc": "project/40-team-composition.md",
+          "placeholders": null
+        },
+        {
+          "state": "OK",
+          "doc": "project/00-interpretation.md",
+          "placeholders": 0
+        },
+        {
+          "state": "OK",
+          "doc": "project/10-business-analysis.md",
+          "placeholders": 0
+        }
+      ],
+      "gate": {
+        "result": "FAIL",
+        "placeholders": 0,
+        "missing": 3
+      },
+      "unparsed_nonblank": 0
+    },
+    "check docs": {
+      "exit": 0,
+      "sec": 0.028,
+      "stdout_lines": 2,
+      "stderr_lines": 0,
+      "items": [],
+      "gate": {
+        "result": "PASS",
+        "placeholders": 0,
+        "missing": 0
+      },
+      "unparsed_nonblank": 0
+    }
+  },
+  "ds02_memory_unchanged_by_cli": true,
+  "ds05_teams": {
+    "teams_dir_exists": true,
+    "charters": 0,
+    "team_composition_doc": false,
+    "team_agents": 1,
+    "catalog_teams": 17
+  }
+}

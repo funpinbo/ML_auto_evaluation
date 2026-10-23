@@ -1,0 +1,63 @@
+{
+  "profile_lines": 838,
+  "category_lines": {
+    "fp": 33,
+    "skip": 529,
+    "usage": 276
+  },
+  "category_byte_share": {
+    "fp": 0.2042,
+    "skip": 0.3448,
+    "usage": 0.451
+  },
+  "avg_line_bytes": {
+    "fp": 20557,
+    "skip": 2166,
+    "usage": 5428
+  },
+  "max_line_bytes": 235954,
+  "runs": [
+    {
+      "target_mb": 50.0,
+      "bytes": 50000328,
+      "lines": 12580,
+      "cold_parse_best_sec": 0.069,
+      "cold_parse_all_sec": [
+        0.088,
+        0.073,
+        0.069
+      ],
+      "sec_per_mb": 0.0014,
+      "responses_after_dedup": 2670,
+      "incremental_1mb_sec": 0.0017
+    },
+    {
+      "target_mb": 200.0,
+      "bytes": 200000060,
+      "lines": 50305,
+      "cold_parse_best_sec": 0.272,
+      "cold_parse_all_sec": [
+        0.327,
+        0.283,
+        0.272
+      ],
+      "sec_per_mb": 0.0014,
+      "responses_after_dedup": 10684,
+      "incremental_1mb_sec": 0.0017
+    },
+    {
+      "target_mb": 600.0,
+      "bytes": 600002178,
+      "lines": 150910,
+      "cold_parse_best_sec": 0.808,
+      "cold_parse_all_sec": [
+        1.029,
+        0.891,
+        0.808
+      ],
+      "sec_per_mb": 0.0013,
+      "responses_after_dedup": 32057,
+      "incremental_1mb_sec": 0.0014
+    }
+  ]
+}

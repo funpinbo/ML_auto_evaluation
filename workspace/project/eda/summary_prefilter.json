@@ -1,0 +1,21 @@
+{
+  "usage_records": 299,
+  "candidates": {
+    "usage": {
+      "hit": 338,
+      "hit_with_usage": 299
+    },
+    "\"usage\":": {
+      "hit": 301,
+      "hit_with_usage": 299
+    },
+    "\"usage\":{\"input_tokens\"": {
+      "hit": 299,
+      "hit_with_usage": 299
+    },
+    "\"type\":\"assistant\"": {
+      "hit": 299,
+      "hit_with_usage": 299
+    }
+  }
+}
