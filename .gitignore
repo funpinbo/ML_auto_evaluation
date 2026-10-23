@@ -1,3 +1,17 @@
 __pycache__/
 *.pyc
 workspace/memory/.cascade-state.json
+
+# AI-DLC Monitor runtime files (T-020, I-01) — 쓰기 주체: Monitor/Hook, 커밋하지 않음
+workspace/memory/.control.json
+workspace/memory/.monitor/
+
+# AI-DLC Monitor build/dev artifacts — monitor/frontend/dist/ 는 커밋 대상(ADR-005)이므로 여기에 넣지 않는다
+monitor/.venv/
+monitor/frontend/node_modules/
+monitor/backend/.pytest_cache/
+monitor/backend/.ruff_cache/
+monitor/backend/.coverage
+monitor/backend/.coverage.*
+monitor/backend/htmlcov/
+monitor/backend/*.egg-info/

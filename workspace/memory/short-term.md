@@ -1,9 +1,9 @@
 ---
-status: active
-task: T-020
-team: cicd
+status: idle
+task: none
+team: none
 outcome: none
-opened_at: 2026-10-23T07:45:49+00:00
+opened_at: none
 ---
 # Short-term Memory
 
@@ -13,13 +13,11 @@ opened_at: 2026-10-23T07:45:49+00:00
 > frontmatter 값: status(idle|active|closed) / outcome(done|partial|blocked)
 
 ## 1. 목표
-- Task: T-020 [cicd] `.gitignore` 에 런타임 파일 등록(`workspace/memory/.control.json`, `workspace/memory/.monitor/`) — I-01 | deps: T-001
-- 완료 조건(DoD): `git check-ignore` 로 두 경로 무시 확인 (출처: STM-0001 §5) + user/02 §10 공통 DoD
+- Task: (T-ID 와 제목, tasks.md 에서 복사)
+- 완료 조건(DoD):
 
 ## 2. 로드한 컨텍스트
-- 관련: I-01 (LTM §3), contracts/README §2 (런타임 파일 위치·쓰기 주체)
-- 팀 charter: workspace/teams/cicd/charter.md (.gitignore 소유 — 기존 프레임워크 줄은 지우지 않고 Monitor 항목만 추가)
-- LTM: 파일당 쓰기 주체 1개 패턴, D-03 스냅샷 경로
+- 관련 FR / 팀 charter / LTM 항목:
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->

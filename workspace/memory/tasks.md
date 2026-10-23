@@ -1,6 +1,6 @@
 ---
-rev: 2
-synced_ltm_rev: 1
+rev: 3
+synced_ltm_rev: 2
 ---
 # Tasks
 
@@ -13,13 +13,13 @@ synced_ltm_rev: 1
 
 ## P1 — MVP (M1)
 - [x] T-001 [architecture] 파일 계약 3종(.control.json, loop-status.json, claude-status.json JSON Schema) + loop-cli.md(서브커맨드·exit code) + sse-events.md + contracts/README — FR-004, FR-005, FR-008 | deps: - | DoD: workspace/project/contracts/ 에 스키마·문서 존재, ADR-003·004·011 과 일치
-- [ ] T-020 [cicd] `.gitignore` 에 런타임 파일 등록(`workspace/memory/.control.json`, `workspace/memory/.monitor/`) — I-01 | deps: T-001 | DoD: `git check-ignore` 로 두 경로 무시 확인 (출처: STM-0001 §5)
+- [x] T-020 [cicd] `.gitignore` 에 런타임 파일 등록(`workspace/memory/.control.json`, `workspace/memory/.monitor/`) — I-01 | deps: T-001 | DoD: `git check-ignore` 로 두 경로 무시 확인 (출처: STM-0001 §5)
 - [ ] T-002 [security] threat-model.md(STRIDE) + privacy.md(허용 필드 화이트리스트, `~/.claude` 접근 범위, Host/Origin 정책) — NFR-003, Q2 | deps: - | DoD: workspace/teams/security/ 에 문서, 이후 리뷰 체크리스트로 사용 가능
 - [ ] T-003 [qa] test-strategy.md + 공용 fixture(conftest: 빈/일부/전체/깨짐/closed STM workspace, 가짜 JSONL 생성기 — 본문 표식 문자열 포함, 스냅샷 fixture) — NFR-001, NFR-002 | deps: T-001 | DoD: fixture 를 import 하는 smoke 테스트 통과
 - [ ] T-004 [product] P1 스토리 6건(FR-001~005, SCOPE-01) + UAT 체크리스트 + 단계 판정 기준(A11) 확정 — FR-001~005, SCOPE-01 | deps: - | DoD: workspace/project/stories/ 에 FR 별 파일, 수용 기준이 테스트 가능
 - [ ] T-005 [backend] API 앱 셸(앱 팩토리, 응답 envelope, 에러 포맷, Host/Origin 가드, dist 마운트, 설정 주입) + AI-DLC 상태 리더(읽기 전용) + GET /pipeline /plan /tasks /memory — FR-001, FR-002, FR-003 | deps: T-001, T-003, T-020 | DoD: 단위·API 테스트 통과, 조회 전후 workspace 해시 불변, `status` 서브프로세스 미사용
 - [ ] T-006 [ops] logging_config + GET /api/v1/health(소스 접근 가능 여부·데우기 진행률·앱 식별자) + 런북 — NFR-002, CON-05 | deps: T-005 | DoD: health 테스트 통과, 로그에 본문·경로·ID 없음
-- [ ] T-007 [cicd] run.py / run.sh / run.bat 원클릭 런처(Python 탐지, venv, 해시 마커 재설치 생략, 포트 선택, 헬스 대기, 브라우저 열기) + requirements 고정 + .gitignore + 로컬 게이트·dist 신선도 검사 — SCOPE-01, KPI-02 | deps: T-006 | DoD: 깨끗한 상태에서 `bash run.sh --no-browser` 로 서버 기동·health 200 확인
+- [ ] T-007 [cicd] run.py / run.sh / run.bat 원클릭 런처(Python 탐지, venv, 해시 마커 재설치 생략, 포트 선택, 헬스 대기, 브라우저 열기) + requirements 고정 + .gitignore + 로컬 게이트·dist 신선도 검사 — SCOPE-01, KPI-02 | deps: T-006 | DoD: 깨끗한 상태에서 `bash run.sh --no-browser` 로 서버 기동·health 200 확인, dist 가 무시되지 않음 확인(I-03)
 - [ ] T-008 [backend] 루프 제어 CLI(aidlc/scripts/loop_control.py + aidlc.py loop-start/loop-check/wait-resume/loop-end) + GET /control, POST /control/pause·resume + R-01 스파이크 — FR-005 | deps: T-001, T-005, T-020 | DoD: exit code 계약(D-09: 0/10/20/2/64/1) 테스트·일시정지/재개/episode 상한 초과·NO_LOOP 시나리오 테스트 통과, 쓰기 결과를 contracts 스키마로 검증하는 테스트(jsonschema 를 dev 의존성으로 쓰면 ADR-006 갱신), 스파이크 결과 STM 기록
 - [ ] T-009 [architecture] aidlc-run SKILL.md 루프 경계 로직(loop-start → 사이클마다 loop-check → 일시정지면 wait-resume 반복 → loop-end, Windows Python 안내) + ADR-004 확정(D-09·D-10 반영) + ADR-011·20 §5 에러 코드에 `TOO_MANY_STREAMS` 추가 — FR-005, I-02 | deps: T-008 | DoD: SKILL.md 가 loop-cli.md 계약과 일치, R-01 결과 반영, I-02 해소 (출처: STM-0001 §5)
 - [ ] T-010 [backend] 사용량 수집기(프로젝트 폴더 해석, 증분 커서, `"usage":` 사전 필터, 허용 필드, requestId 중복 제거, 시간 버킷, 데우기) + statusline.sh/py(허용 필드 스냅샷, 원자적 쓰기, 전역 statusLine 체이닝) + settings.json statusLine 등록 + GET /usage/summary, /usage/timeseries — FR-004 | deps: T-002, T-003, T-005, T-020 | DoD: 본문 비노출 테스트·중복 제거 테스트·폴백(스냅샷 없음) 테스트 통과, `transcript_dir_name` 재검증 + `~/.claude/projects` 직속 하위 경계 검사(symlink 포함) 테스트, 응답·로그에 transcript_dir_name 미포함 테스트 (D-13, 출처: STM-0001 §5)
