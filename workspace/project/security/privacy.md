@@ -2,13 +2,14 @@
 doc: privacy-policy-checklist
 layer: project
 owner: security
-sources: [00 Q2/C2, 20 §4, ADR-002, ADR-003, ADR-011, contracts/README §2·§3, NFR-003, CON-07, QS-05·06·07, LTM D-02·D-08·D-13]
+sources: [00 Q2/C2, 20 §4·§5, ADR-002, ADR-003, ADR-011 §4·§5·§9, contracts/README §2·§3, NFR-003, CON-07, QS-05·06·07, LTM D-02·D-08·D-13·D-14·D-18·D-19]
 status: draft
 ---
 # 개인정보·접근 범위·Host/Origin 정책 (리뷰 체크리스트)
 
 리뷰어(security, qa)는 아래 P-항목을 하나씩 실제 테스트·grep·diff 로 확인하고 결과를 STM §7 에 쓴다. 구현은 backend 소유(`privacy_filter.py` 등), 이 문서는 기준이다.
 실행하지 않은 항목은 통과로 쓰지 않는다. 불확실하면 FAIL.
+체크리스트 ID(P-/N-/W-/D-/T-)와 그 하위 테스트 케이스 ID(N-02 의 H-xx, N-04 의 C-xx, §5.1·§5.2)는 이 문서에서만 정의한다. 다른 문서는 ID 를 참조만 한다.
 
 ## 1. 허용 필드 화이트리스트 (JSONL → 메모리)
 | 허용 필드 | 용도 | 비고 |
@@ -73,19 +74,65 @@ status: draft
 | 항목 | 규칙 | 오류 |
 |------|------|------|
 | 바인딩 | `127.0.0.1` 고정. 주소를 바꾸는 CLI 옵션·환경변수·설정 0개 | - |
-| Host | `127.0.0.1:<port>` 또는 `localhost:<port>` 만 허용. 그 외(IP, 다른 도메인, 빈 값, 포트 불일치) 거부 | 400 `BAD_HOST` |
-| POST Content-Type | `application/json` 필수 (form 계열·text/plain 거부) | 403 `FORBIDDEN_ORIGIN` |
+| Host | `Host` 헤더가 **정확히 1개**이고, 값 `strip()`·소문자화 후 `127.0.0.1:<port>` 또는 `localhost:<port>` 와 **정확 일치**할 때만 통과(`<port>` = `settings.port`, D-19). 접두·접미 일치, 포트 생략, 다른 포트, 선행 0 포트, userinfo, 추가 세그먼트, `[::1]`, 끝 점, 빈 값·누락·중복은 전부 거부. 가드는 자체 ASGI `HostGuardMiddleware`(가장 바깥, D-18)이며 GET·POST·SSE·정적 dist 전부에 적용. 거부 메시지에 받은 Host 값을 넣지 않는다 | 400 `BAD_HOST` |
+| POST Content-Type | `Content-Type` 의 미디어 타입(첫 `;` 앞, `strip()`·소문자화)이 정확히 `application/json` 일 때만 통과. 매개변수 허용(`; charset=utf-8`). 누락·form 계열·`text/plain`·접두 함정(`application/jsonx`, `application/json-patch+json`)은 `.control.json` 을 건드리기 전, 본문 검증(422)보다 먼저 거부. 415 는 쓰지 않는다 | 403 `FORBIDDEN_ORIGIN` |
 | POST Origin | 있으면 `http://127.0.0.1:<port>` 또는 `http://localhost:<port>` 와 정확히 일치, 불일치 거부 | 403 `FORBIDDEN_ORIGIN` |
 | CORS | 미들웨어 없음, `Access-Control-*` 응답 헤더 0, OPTIONS preflight 에 허용 응답 없음 | - |
 | 보안 헤더 | `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, CSP `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'` | - |
-| 오류 본문 | `{"error":{"code","message"}}`, message 에 경로·입력 원문 미포함 | - |
+| 오류 본문 | `{"error":{"code","message"}}`, message 에 경로·입력 원문(받은 Host·Origin·Content-Type 값 포함) 미포함 | - |
 
-참고: 비-JSON Content-Type 을 `FORBIDDEN_ORIGIN` 403 으로 응답하는 것은 팀 지침/ADR 합의안이다. 20 §QS-05 가 "Origin 불일치 또는 Content-Type 이 JSON 아님 → 403" 으로 명시하고 20 §8 에러 코드 목록(닫힌 집합)에 415 가 없다. 따라서 구현이 다른 코드(예: 415)를 쓰면 계약 위반으로 FAIL 이다. (ADR-011 §5 본문 보강은 architecture Task 후보)
+참고: 비-JSON Content-Type 을 `FORBIDDEN_ORIGIN` 403 으로 응답하는 것은 ADR-011 §5 확정안이다(D-14). 20 §QS-05 가 "Origin 불일치 또는 Content-Type 이 JSON 아님 → 403" 으로 명시하고 20 §5 에러 코드 목록(닫힌 집합, ADR-011 §9 와 동일)에 415 가 없다. 따라서 구현이 다른 코드(예: 415)를 쓰면 계약 위반으로 FAIL 이다.
+Host 헤더 개수 판정은 서버 파서(h11/uvicorn)의 동작에 맡기지 않고 가드가 ASGI `scope["headers"]` 에서 `host` 항목 수를 세어 직접 한다(LTM 패턴). 테스트는 TestClient 의 Host 를 직접 덮어쓰거나 ASGI scope 를 직접 만들어 넣는다(ADR-011 §4 테스트 영향: `base_url="http://127.0.0.1:<fixture port>"`).
+
+### 5.1 N-02 Host 케이스 표 (T-005 테스트로 그대로 옮김)
+표기: `<port>` = fixture 의 `settings.port`(예: 8765), `<other>` = `<port>` 와 다른 포트. "대상" 이 `*` 인 행은 아래 4개 대상 각각에 대해 실행한다 — `GET /api/v1/health`, `POST /api/v1/control/pause`(정상 JSON 본문·허용 Origin), `GET /api/v1/events`(SSE), `GET /`(정적 dist index). 거부 행은 모두 응답 본문 `error.code == "BAD_HOST"`, `error.message` 에 요청 Host 값(부분 문자열 포함)이 없고, POST 의 경우 `.control.json` 이 변하지 않는다(해시 비교).
+
+| case | 요청 Host 헤더 | 대상 | 기대 |
+|------|----------------|------|------|
+| H-01 | `127.0.0.1:<port>` | * | 통과 (400 아님) |
+| H-02 | `localhost:<port>` | * | 통과 |
+| H-03 | `LOCALHOST:<port>` | * | 통과 (소문자화) |
+| H-04 | `127.0.0.1:1` (포트 불일치) | * | 400 `BAD_HOST` |
+| H-05 | `localhost:<other>` | * | 400 `BAD_HOST` |
+| H-06 | `127.0.0.1` (포트 생략) | * | 400 `BAD_HOST` |
+| H-07 | `localhost` (포트 생략) | * | 400 `BAD_HOST` |
+| H-08 | `[::1]:<port>` | * | 400 `BAD_HOST` |
+| H-09 | `localhost.:<port>` (끝 점) | * | 400 `BAD_HOST` |
+| H-10 | `127.0.0.1:0<port>` (선행 0, 예: `127.0.0.1:08765`) | * | 400 `BAD_HOST` |
+| H-11 | `user@127.0.0.1:<port>` (userinfo) | * | 400 `BAD_HOST` |
+| H-12 | `127.0.0.1:<port>:x` (추가 세그먼트) | * | 400 `BAD_HOST` |
+| H-13 | `localhost.evil.com:<port>` (접두 일치) | * | 400 `BAD_HOST` |
+| H-14 | `evil.example` | * | 400 `BAD_HOST` |
+| H-15 | `192.168.0.10:<port>` | * | 400 `BAD_HOST` |
+| H-16 | `""` (빈 값) | * | 400 `BAD_HOST` |
+| H-17 | Host 헤더 없음 (scope `headers` 에 `host` 0개) | * | 400 `BAD_HOST` |
+| H-18 | Host 헤더 2개: `127.0.0.1:<port>` + `127.0.0.1:<port>` (같은 값 중복) | * | 400 `BAD_HOST` |
+| H-19 | Host 헤더 2개: `127.0.0.1:<port>` + `evil.example` | * | 400 `BAD_HOST` |
+| H-20 | `testserver` (TestClient 기본값) | `GET /api/v1/health` | 400 `BAD_HOST` |
+| H-21 | `evil.example` + POST 의 Origin·Content-Type 도 잘못됨 | `POST /api/v1/control/pause` | 400 `BAD_HOST` (Host 가드가 가장 바깥이라 403 보다 먼저) |
+| H-22 | `evil.example`, 존재하지 않는 경로 | `GET /api/v1/nope`, `GET /assets/nope.js` | 400 `BAD_HOST` (404 아님) |
+
+### 5.2 N-04 Content-Type 케이스 표 (T-005 테스트로 그대로 옮김)
+공통: Host `127.0.0.1:<port>`, Origin `http://127.0.0.1:<port>`, 대상 `POST /api/v1/control/pause` 와 `POST /api/v1/control/resume` 각각, 본문은 해당 엔드포인트의 유효한 JSON 바이트(C-10 제외). 거부 행은 모두 `error.code == "FORBIDDEN_ORIGIN"`, 상태 코드가 415·422 가 아니며, `.control.json` 이 존재 여부·바이트 모두 요청 전과 같다.
+
+| case | 요청 `Content-Type` | 기대 |
+|------|---------------------|------|
+| C-01 | `application/json` | 통과 (403 아님) |
+| C-02 | `application/json; charset=utf-8` | 통과 |
+| C-03 | `Application/JSON` | 통과 (미디어 타입 소문자화) |
+| C-04 | 헤더 없음 | 403 `FORBIDDEN_ORIGIN` |
+| C-05 | `application/x-www-form-urlencoded` | 403 `FORBIDDEN_ORIGIN` |
+| C-06 | `multipart/form-data; boundary=x` | 403 `FORBIDDEN_ORIGIN` |
+| C-07 | `text/plain` | 403 `FORBIDDEN_ORIGIN` |
+| C-08 | `application/jsonx` (접두 함정) | 403 `FORBIDDEN_ORIGIN` |
+| C-09 | `application/json-patch+json` (접두 함정) | 403 `FORBIDDEN_ORIGIN` |
+| C-10 | `text/plain` + 본문이 JSON 이 아닌 바이트 | 403 `FORBIDDEN_ORIGIN` (422 `VALIDATION_ERROR` 아님 — Content-Type 검사가 본문 검증보다 먼저) |
+| C-11 | `""` (빈 값) | 403 `FORBIDDEN_ORIGIN` |
 
 - [ ] **N-01** 서버 기동 코드가 `host="127.0.0.1"` 리터럴이고, `--host`/`HOST` 환경변수/설정 파일로 변경하는 경로가 없다(grep `0.0.0.0`, `host=`, `argparse` 옵션 목록).
-- [ ] **N-02** 테스트: Host `evil.example`, `192.168.x.x:<port>`, `127.0.0.1`(포트 없음 허용 여부는 구현 결정. 포트 불일치 `127.0.0.1:1` 거부는 선택 — ADR-011 §4 의 `TrustedHostMiddleware` 는 포트를 보지 않으므로, 거부하려면 구현 방식을 ADR-011 에 먼저 반영한다), `localhost.evil.com:<port>`, 빈 Host 가 400 `BAD_HOST` 이다. GET·POST 모두. 정상 `127.0.0.1:<port>`, `localhost:<port>` 는 통과.
+- [ ] **N-02** §5.1 표 H-01~H-22 가 전부 자동 테스트로 있고 통과한다(`*` 행은 4개 대상 전부). 포트 검사·Host 개수 검사는 **필수**다. 추가로 코드 확인: `TrustedHostMiddleware` import/사용 0건, 허용 집합이 `settings.port` 에서 만들어짐(포트 리터럴 중복 0), `HostGuardMiddleware` 가 앱의 가장 바깥 미들웨어이고 http·SSE·정적 마운트 경로를 가리지 않고 적용됨, 거부 응답 생성에 요청 Host 값이 쓰이지 않음.
 - [ ] **N-03** 테스트: POST 의 Origin `http://evil.example`, `null`, `http://127.0.0.1:<다른포트>`, `https://127.0.0.1:<port>` 가 403 `FORBIDDEN_ORIGIN`. Origin 없음 + JSON 은 통과(비브라우저 허용, 잔여 위험으로 수용).
-- [ ] **N-04** 테스트: POST 의 `Content-Type` 이 `application/x-www-form-urlencoded`, `multipart/form-data`, `text/plain`, 없음일 때 거부되고 `.control.json` 이 변하지 않는다. `application/json; charset=utf-8` 은 통과.
+- [ ] **N-04** §5.2 표 C-01~C-11 이 전부 자동 테스트로 있고 통과한다(pause·resume 각각). 거부는 항상 403 `FORBIDDEN_ORIGIN` 이며 415 를 반환하는 경로가 코드에 0건(grep `415`, `HTTP_415`, `UNSUPPORTED_MEDIA_TYPE`). 미디어 타입 비교가 `startswith`/`in` 이 아니라 정확 일치다(diff 확인).
 - [ ] **N-05** 응답 헤더에 `Access-Control-Allow-Origin` 등 CORS 헤더가 없다(허용 Origin 요청, 타 Origin 요청, OPTIONS 모두).
 - [ ] **N-06** 보안 헤더 3종이 모든 응답(정적 dist 포함)에 있다.
 - [ ] **N-07** 입력은 enum/범위 Pydantic 모델이며 요청에서 파일 경로를 받는 파라미터가 없다. 422 는 `VALIDATION_ERROR` 로 변환되고 입력 원문을 되돌려주지 않는다.

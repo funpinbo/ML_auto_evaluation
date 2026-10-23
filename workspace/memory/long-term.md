@@ -1,6 +1,6 @@
 ---
-rev: 7
-last_merged_stm: 7
+rev: 8
+last_merged_stm: 8
 ---
 # Long-term Memory
 
@@ -35,6 +35,7 @@ last_merged_stm: 7
 | D-22 | FR-005 화면 라벨 6종(V1~V6)과 종료 사유 문구는 stories/FR-005 §2.1·§2.3 이 단일 기준. qa 는 문구 포함 여부로 검증 | 문구 흩어짐 방지 | - | (STM-0006) |
 | D-23 | KPI 측정 규칙: KPI-01 타이머 = 질문 읽기 시작~답, 첫 화면 = 스크롤·클릭 없는 영역(창 크기 기록), 정답은 파일에서 직접(`aidlc.py status` 금지). KPI-02 타이머 = 실행 동작~상단 행 표시, 다운로드 제외 | 측정 재현성 | - | (STM-0006, uat/uat-checklist) |
 | D-24 | 테스트 홈 격리 3겹: `pytest_configure` 세션 치환 + autouse 테스트별 치환 + `sys.addaudithook` 가드(`RealHomeAccessError`). 가드는 제거 불가라 `enabled` 플래그로 켜고 끄며 음성 테스트는 `home_guard.expect()` 사용. 위반은 예외 전에 기록되어 삼켜도 teardown 에서 드러남 | D-16 강화, security 리뷰 | function 범위만 | (STM-0007) |
+| D-25 | Host·Content-Type 검증 케이스의 단일 정의는 privacy.md §5.1(H-01~H-22: 4개 대상 GET/POST/SSE/dist)·§5.2(C-01~C-11: pause·resume). Content-Type 은 미디어 타입(첫 `;` 앞)이 대소문자 무시로 `application/json` 과 정확히 일치, 422 검증보다 먼저 403. 잘못된 Host 는 403·404 보다 먼저 400. Host 헤더 개수는 가드가 `scope["headers"]` 에서 판정 | ADR-011 정확 일치 규칙의 구체화 | ADR 문구만 | (STM-0008) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -58,6 +59,8 @@ last_merged_stm: 7
 - 패널 화면 상태는 `meta.status` 5종(ok/partial/empty/error/warming)으로 스토리마다 표를 둔다 (STM-0006)
 - 가드 음성 테스트는 실제 홈 아래 **존재하지 않는 이름**만 쓰고 `RealHomeAccessError` 를 단언해 "시스템 호출 전 차단" 을 증명한다(실제 파일을 읽지 않음) (STM-0007)
 - 감사 hook 가드는 인자 없는 호출(None 인자, 예: `os.listdir()`)을 cwd 로 해석해 판정해야 한다 (STM-0007, security 리뷰)
+- 보안 점검은 케이스 표(케이스 id, 요청, 대상, 기대 상태/코드) + 코드 점검 grep(TrustedHostMiddleware 0건, `startswith`/`in` 비교 금지, 415 경로 없음)으로 써서 구현 Task 가 그대로 테스트로 옮기게 한다 (STM-0008)
+- 중복 Host(H-18)는 httpx TestClient 로 보내기 어려우므로 ASGI scope 를 직접 만들어 테스트한다 (STM-0008)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -74,7 +77,7 @@ last_merged_stm: 7
 | I-10 | 하드 링크는 `resolve()` 경계 검사로 탐지 불가 | 경로 이탈 | 열림 → T-022 (방침 결정) | (STM-0004) |
 | I-11 | 30일 JSONL 329~658 MB 크기는 선형 추정(pad 9000~18000) | 성능 테스트 정확도 | 열림 → T-013 실측 | (STM-0004) |
 | I-12 | `jsonschema-specifications 2025.9.1` 이 02 §9 "최근 1년 내 릴리스" 경계(약 13개월) — dev·전이 전용이라 수용 | 의존성 정책 | 감시 → T-007 고정 시 최신 확인 | (STM-0005) |
-| I-13 | privacy.md N-02·N-04 가 ADR-011 §4·§5 와 불일치(포트 검사 "선택", TrustedHost 문구), 중복 Host·선행 0·userinfo·Content-Type 접두 함정 케이스 없음 | T-005 리뷰 기준 | 열림 → T-024 (T-005 전) | (STM-0005) |
+| ~~I-13~~ | privacy.md N-02·N-04 가 ADR-011 §4·§5 와 불일치(포트 검사 "선택", TrustedHost 문구), 중복 Host·선행 0·userinfo·Content-Type 접두 함정 케이스 없음 | T-005 리뷰 기준 | 열림 → T-024 (T-005 전) | (STM-0005) → **해소** (STM-0008: privacy.md §5.1 H-01~H-22, §5.2 C-01~C-11) |
 | I-14 | ADR-011 §9 에 405(OPTIONS 포함)·Starlette 기본 HTTPException 매핑 규칙과 기본 `{"detail":...}` 본문 금지가 없음, HostGuard 의 websocket/lifespan scope 처리 미정, SSE GET Origin 검사 여부 미정(교차 출처 EventSource 로 슬롯 소모 → 가용성) | 앱 셸 구현 | 열림 → T-025 (T-005 전) | (STM-0005) |
 | I-15 | `aidlc.py check docs` 는 검사 대상 문서가 0개여도 PASS(exit 0) → P1 종료 조건·T-014 DoD 가 문서 없이 충족될 수 있음. 대시보드는 D-21 의 `docs/README.md` 조건으로 보완. 프레임워크 Gate 변경은 별도 승인 필요 | Gate 신뢰성 | 열림 → 사용자 질문 Q-P2 | (STM-0006) |
 | I-16 | 루프 도중 `.control.json` 이 깨지거나 삭제되면 대시보드가 seq 1 을 써서 `baseline_seq` 이하가 되어 CLI 가 새 pause/resume 을 무시 | FR-005 신뢰성 | 열림 → T-026 (T-008 전) | (STM-0006) |
@@ -131,6 +134,7 @@ last_merged_stm: 7
 - Task 문구에 적힌 문서 절 번호는 틀릴 수 있다(20 §8 → 실제 §5). 수정 전에 grep 으로 위치를 확인한다 (STM-0005)
 - 가정을 확정할 때는 프레임워크 스크립트를 실제로 돌려 경계 동작(템플릿 직후 상태, 빈 대상 PASS)을 확인해야 오판을 막는다 (STM-0006)
 - 중단 후 커밋된 반쪽 변경은 실패 원인이 사소한 경우가 많다 — 갈아엎기 전에 먼저 실행해 원인을 확인한다 (STM-0007)
+- ADR 이 확정되면 그 ADR 을 인용하는 체크리스트의 "선택"/"후보" 문구를 같은 Phase 안에 정리한다 (STM-0008)
 
 ## 6. 용어집 (Glossary)
 | 용어 | 정의 |

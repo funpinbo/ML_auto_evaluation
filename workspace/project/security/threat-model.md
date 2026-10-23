@@ -34,8 +34,8 @@ status: draft
 ### 2.2 DNS rebinding / CSRF (브라우저가 공격 경로)
 | STRIDE | 위협 | 통제 | 잔여 | 검증 |
 |--------|------|------|------|------|
-| S/I | 공격자 도메인이 127.0.0.1 로 재바인딩되어 동일 출처 정책을 우회, 응답 읽기 | Host 가 `127.0.0.1:<port>`/`localhost:<port>` 가 아니면 400 `BAD_HOST` | L | N-02 |
-| T/E | 다른 사이트의 form/fetch 가 `POST /control/pause|resume` 호출 | POST 는 `Content-Type: application/json` 필수(단순 form 차단), Origin 이 있으면 허용 출처와 일치해야 함, 아니면 403 `FORBIDDEN_ORIGIN` | L | N-03·N-04 |
+| S/I | 공격자 도메인이 127.0.0.1 로 재바인딩되어 동일 출처 정책을 우회, 응답 읽기(같은 PC 의 다른 로컬 포트로 향한 Host 혼동 포함) | 자체 `HostGuardMiddleware`(가장 바깥, ADR-011 §4·D-18): Host 헤더 정확히 1개 + 소문자화 후 `127.0.0.1:<port>`/`localhost:<port>` 정확 일치(`<port>`=`settings.port`)가 아니면 400 `BAD_HOST`, GET·POST·SSE·정적 dist 전부. 케이스는 privacy.md §5.1 | L | N-02 |
+| T/E | 다른 사이트의 form/fetch 가 `POST /control/pause|resume` 호출 | POST 는 미디어 타입이 정확히 `application/json`(누락·form 계열·접두 함정 거부, 쓰기 전), Origin 이 있으면 허용 출처와 일치해야 함, 아니면 403 `FORBIDDEN_ORIGIN`(415 아님, ADR-011 §5·D-14). 케이스는 privacy.md §5.2 | L | N-03·N-04 |
 | I | CORS 설정 실수로 타 출처 응답 읽기 허용 | CORS 미들웨어 미사용, `Access-Control-*` 헤더 0 | L | N-05 |
 | T | Origin 헤더 없는 비브라우저 클라이언트 POST | 루프백 도달 가능한 로컬 프로세스는 이미 같은 사용자 권한 → 수용(ADR-011: 토큰 인증 기각). 쓰기 대상이 `.control.json` 1개이고 Pydantic 검증된 값만 쓰므로 영향 제한 | L (수용) | N-03, N-07 |
 | I/T | 응답 내용 스니핑·프레임 삽입 | `nosniff`, `Referrer-Policy: no-referrer`, CSP(`default-src 'self'` …) | L | N-06 |
