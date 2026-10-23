@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.config import Settings
 from app.main import MonitorApp, create_app
 
+RECEIVE_DISCONNECT_SEC = 0.05
 TEST_PORT = 18765
 OTHER_PORT = 18766
 BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
@@ -162,7 +163,8 @@ def asgi_http(app: Any, scope: dict[str, Any], body: bytes = b"") -> RawResponse
         if not sent_body["done"]:
             sent_body["done"] = True
             return {"type": "http.request", "body": body, "more_body": False}
-        await asyncio.sleep(3600)
+        # I-24: 두 번째 receive 는 연결 종료를 기다리는 경로(스트림 등)뿐이다 — 짧게 끊어 테스트가 걸리지 않게.
+        await asyncio.sleep(RECEIVE_DISCONNECT_SEC)
         return {"type": "http.disconnect"}
 
     async def send(message: dict[str, Any]) -> None:

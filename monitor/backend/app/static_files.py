@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from starlette.exceptions import HTTPException
-from starlette.responses import FileResponse, HTMLResponse
+from starlette.responses import FileResponse, HTMLResponse, Response
 from starlette.types import Receive, Scope, Send
 
 from app.security import route_path
@@ -77,6 +77,7 @@ class StaticFallback:
             raise HTTPException(status_code=404)
         if method not in ("GET", "HEAD"):
             raise HTTPException(status_code=405, headers={"Allow": STATIC_METHODS})
+        response: Response
         if target is None:
             response = HTMLResponse(
                 _NO_DIST_HTML, headers={"Cache-Control": "no-cache"}

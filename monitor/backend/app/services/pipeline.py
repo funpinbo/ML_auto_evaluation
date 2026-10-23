@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.models.pipeline import Gate, PipelineData, Stage
+from app.models.pipeline import Gate, PipelineData, Stage, StageState
 from app.services.aidlc_reader import (
     EngineUnavailable,
     HookEngine,
@@ -69,7 +69,7 @@ def any3(*values: Tri) -> Tri:
     return False
 
 
-def stage_state(done: Tri, started: Tri) -> str:
+def stage_state(done: Tri, started: Tri) -> StageState:
     if done is True:
         return "done"
     if done is None:
@@ -292,7 +292,7 @@ class PipelineService:
                 name=STAGES[i][0],
                 command=STAGES[i][1],
                 state=stage_state(d, s),
-            )  # type: ignore[arg-type]
+            )
             for i, (d, s) in enumerate(results)
         ]
         if any(s.state == "unknown" for s in stages):

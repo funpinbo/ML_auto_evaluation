@@ -19,9 +19,12 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.models.envelope import SourceErrorCode
+
+if TYPE_CHECKING:  # 3.11 에는 collections.abc.Buffer 가 없다 — 타입 검사 전용
+    from typing_extensions import Buffer
 
 log = logging.getLogger("aidlc_monitor.reader")
 
@@ -170,7 +173,7 @@ class HookLoader:
 class _NoBytecodeLoader(importlib.machinery.SourceFileLoader):
     """`__pycache__/*.pyc` 를 쓰지 않는 로더 — 대시보드의 쓰기 대상은 `.control.json` 하나뿐이다 (W-01)."""
 
-    def set_data(self, path: str, data: bytes, *, _mode: int = 0o666) -> None:
+    def set_data(self, path: str, data: Buffer, *, _mode: int = 0o666) -> None:
         return None
 
 

@@ -17,7 +17,13 @@ import pytest
 from backend_support import BACKEND_DIR, client_for
 from fixtures.hashing import diff_manifests, hash_tree, tree_manifest
 
-READ_APIS = ("/api/v1/pipeline", "/api/v1/plan", "/api/v1/tasks", "/api/v1/memory")
+READ_APIS = (
+    "/api/v1/pipeline",
+    "/api/v1/plan",
+    "/api/v1/tasks",
+    "/api/v1/memory",
+    "/api/v1/control",
+)
 WRITE_FUNCS = ("write_doc", "main", "handle")
 WRITE_METHODS = ("reset_stm", "archive_stm_if_closed", "snapshot_stm", "save_state")
 
@@ -26,8 +32,10 @@ class HookWriteCalled(AssertionError):
     pass
 
 
-def _raiser(name: str):
+def _raiser(name: str, calls: list[str] | None = None):
     def fake(*args, **kwargs):
+        if calls is not None:
+            calls.append(name)
         raise HookWriteCalled(name)
 
     return fake
@@ -63,24 +71,25 @@ def test_closed_stm_not_archived_by_any_api(engine_workspace) -> None:
     assert hash_tree(info.root) == before
 
 
-@pytest.mark.parametrize("kind", ["full", "closed_stm", "broken"])
+@pytest.mark.parametrize("kind", ["empty", "partial", "full", "broken", "closed_stm"])
 def test_hook_write_functions_replaced_by_raising_fakes(
     engine_workspace, monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
+    """I-24: 패널 상태가 아니라 호출 기록으로 판정한다 — 어떤 workspace 종류에서도 0회."""
     info = engine_workspace(kind)
     client = client_for(info.root)
     module = client.app.state.services.memory.loader.load(info.root).module
+    calls: list[str] = []
     for name in WRITE_FUNCS:
-        monkeypatch.setattr(module, name, _raiser(name))
+        monkeypatch.setattr(module, name, _raiser(name, calls))
     for name in WRITE_METHODS:
-        monkeypatch.setattr(module.Memory, name, _raiser(name))
+        monkeypatch.setattr(module.Memory, name, _raiser(name, calls))
     before = hash_tree(info.root)
-    for path in READ_APIS:
-        resp = client.get(path)
-        assert resp.status_code == 200
-        meta = resp.json()["meta"]
-        # 가짜가 호출됐다면 패널 격리로 error 가 됐을 것 — 그런 패널은 없어야 한다
-        assert not (meta["status"] == "error" and kind == "full"), (path, meta)
+    for _ in range(2):
+        for path in READ_APIS:
+            resp = client.get(path)
+            assert resp.status_code == 200
+    assert calls == []
     assert hash_tree(info.root) == before
 
 

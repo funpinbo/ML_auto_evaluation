@@ -199,7 +199,7 @@ _SECURITY_RAW = [(k.encode(), v.encode()) for k, v in SECURITY_HEADERS]
 
 def wrap_guards(app: ASGIApp, *, port: int) -> ASGIApp:
     """가드를 정해진 순서로 감싼다. HostGuard 가 가장 바깥이다 (D-18, D-29)."""
-    inner = ErrorShieldMiddleware(app)
-    inner = SecurityHeadersMiddleware(inner)
-    inner = OriginGuardMiddleware(inner, port=port)
-    return HostGuardMiddleware(inner, port=port)
+    shielded: ASGIApp = ErrorShieldMiddleware(app)
+    headed: ASGIApp = SecurityHeadersMiddleware(shielded)
+    origin_checked: ASGIApp = OriginGuardMiddleware(headed, port=port)
+    return HostGuardMiddleware(origin_checked, port=port)

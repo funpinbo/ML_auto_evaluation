@@ -183,6 +183,34 @@ def cmd_status(_: list[str]) -> int:
 
 COMMANDS = {"init": cmd_init, "check": cmd_check, "teams": cmd_teams, "new-team": cmd_new_team, "status": cmd_status}
 
+# ---- loop-* 서브커맨드 등록 블록 (backend 소유, contracts/loop-cli.md, ADR-004) ----------------
+#   aidlc.py loop-start <N> | loop-check <done> | wait-resume [--max-wait <sec>] | loop-end <reason> [--done <n>]
+# 인자 파싱·exit code(0/10/20/2/64/1)·stdout 한 줄은 loop_control.py 가 전부 맡는다.
+LOOP_SUBCOMMANDS = ("loop-start", "loop-check", "wait-resume", "loop-end")
+
+
+def _loop_command(sub: str):
+    def run(args: list[str]) -> int:
+        import importlib.util
+
+        sys.dont_write_bytecode = True  # 저장소에 __pycache__ 를 만들지 않는다 (쓰기는 loop-status.json 하나)
+        try:
+            name = "aidlc_loop_control"
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "loop_control.py")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module  # dataclass 가 모듈을 찾는다
+            spec.loader.exec_module(module)
+        except Exception as exc:  # 계약: 예외 종류만 stderr, exit 1 (경로·traceback 없음)
+            print(f"aidlc-loop: unexpected error: {type(exc).__name__}", file=sys.stderr)
+            return 1
+        return module.main([sub, *args])
+
+    return run
+
+
+COMMANDS.update({sub: _loop_command(sub) for sub in LOOP_SUBCOMMANDS})
+# ---- loop-* 등록 블록 끝 ------------------------------------------------------------------------
+
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[1] not in COMMANDS:
