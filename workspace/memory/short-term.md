@@ -1,9 +1,9 @@
 ---
-status: idle
-task: none
-team: none
+status: active
+task: T-025
+team: architecture
 outcome: none
-opened_at: none
+opened_at: 2026-10-23T13:52:10+00:00
 ---
 # Short-term Memory
 
@@ -13,11 +13,12 @@ opened_at: none
 > frontmatter 값: status(idle|active|closed) / outcome(done|partial|blocked)
 
 ## 1. 목표
-- Task: (T-ID 와 제목, tasks.md 에서 복사)
-- 완료 조건(DoD):
+- Task: T-025 [architecture] ADR-011 §9 보강: 405(OPTIONS 포함)·Starlette 기본 HTTPException 매핑 규칙(기존 코드로 매핑 또는 `METHOD_NOT_ALLOWED` 추가 결정), 기본 `{"detail":...}` 본문 금지, HostGuard 의 websocket scope 거부·lifespan 통과, SSE GET 에 Origin 검사 적용 여부 결정(교차 출처 EventSource 슬롯 소모 가용성 위험), §4 에 Host 헤더 정확히 1개 규칙·선행 0·userinfo·추가 세그먼트 거부 명시, §5 에 미디어 타입 대소문자 무시 정확 일치·422 보다 먼저 403 명시(D-25, privacy.md §5.1·§5.2 와 정합) — I-14 | deps: T-021
+- 완료 조건(DoD): ADR-011·20 §5·sse-events.md 정합, 결정 근거 기록 (출처: STM-0005 §5) + user/02 §10 공통 DoD
 
 ## 2. 로드한 컨텍스트
-- 관련 FR / 팀 charter / LTM 항목:
+- 관련: LTM I-14(405·HTTPException 매핑, websocket/lifespan scope, SSE Origin), D-18~D-20, D-25(privacy.md §5.1·§5.2 케이스 단일 정의), D-12(SSE 연결 상한 503)
+- 근거: workspace/project/adr/ADR-011, 20-architecture-analysis.md §5, contracts/sse-events.md, security/privacy.md §5, STM-0005·STM-0008 §5 의 [architecture] 후보
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->
