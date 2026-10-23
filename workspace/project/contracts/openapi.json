@@ -1,0 +1,1140 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AI-DLC Monitor API",
+    "description": "로컬 전용(127.0.0.1) AI-DLC 대시보드 API. 조회 응답은 `{data, meta}` 봉투, 요청 오류는 `{\"error\":{code,message}}` (닫힌 코드 9개). 소스 문제는 HTTP 200 + `meta.status`.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/pipeline": {
+      "get": {
+        "tags": [
+          "pipeline"
+        ],
+        "summary": "AI-DLC 단계 0~6 상태와 Gate 3종",
+        "description": "단계 판정은 FR-001 §2(D-21). Gate 는 `aidlc.py check` 서브프로세스(TTL 5 s).",
+        "operationId": "get_pipeline",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PipelineData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/plan": {
+      "get": {
+        "tags": [
+          "plan"
+        ],
+        "summary": "Phase 별 진행률과 현재·완료 Phase",
+        "operationId": "get_plan",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PlanData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "tags": [
+          "plan"
+        ],
+        "summary": "Task 목록 (팀·상태·Phase 필터, AND)",
+        "operationId": "get_tasks",
+        "parameters": [
+          {
+            "name": "team",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{1,30}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "팀 id",
+              "title": "Team"
+            },
+            "description": "팀 id"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "open | done | blocked | active",
+              "title": "Status"
+            },
+            "description": "open | done | blocked | active"
+          },
+          {
+            "name": "phase",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^P\\d{1,4}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Phase (예: P1)",
+              "title": "Phase"
+            },
+            "description": "Phase (예: P1)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TasksData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR — 쿼리 검증",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/memory": {
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "STM·LTM·Task 동기 값과 미처리 cascade",
+        "description": "cascade 판정은 Hook `Memory.pending().level` (ADR-009). `aidlc.py status` 는 실행하지 않는다.",
+        "operationId": "get_memory",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MemoryData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Envelope_MemoryData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[MemoryData]"
+      },
+      "Envelope_PipelineData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PipelineData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[PipelineData]"
+      },
+      "Envelope_PlanData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[PlanData]"
+      },
+      "Envelope_TasksData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TasksData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[TasksData]"
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "VALIDATION_ERROR",
+          "NOT_FOUND",
+          "METHOD_NOT_ALLOWED",
+          "BAD_HOST",
+          "FORBIDDEN_ORIGIN",
+          "NO_ACTIVE_LOOP",
+          "TOO_MANY_STREAMS",
+          "CONTROL_WRITE_FAILED",
+          "INTERNAL_ERROR"
+        ],
+        "title": "ErrorCode"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorDetail"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "description": "요청 오류 본문 `{\"error\": {\"code\", \"message\"}}` (02 §6). 코드는 닫힌 집합 9개."
+      },
+      "Gate": {
+        "properties": {
+          "layer": {
+            "type": "string",
+            "enum": [
+              "user",
+              "project",
+              "docs"
+            ],
+            "title": "Layer"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "FAIL",
+              "UNKNOWN"
+            ],
+            "title": "Result"
+          },
+          "unwritten": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unwritten",
+            "description": "미작성 플레이스홀더 수 (대상 없음·확인 불가면 null)"
+          },
+          "missing": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing",
+            "description": "누락 문서 수 (대상 없음·확인 불가면 null)"
+          },
+          "target_missing": {
+            "type": "boolean",
+            "title": "Target Missing",
+            "description": "대상 디렉터리 없음 (FAIL + '대상 없음')"
+          },
+          "no_documents": {
+            "type": "boolean",
+            "title": "No Documents",
+            "description": "검사 대상 문서 0개로 PASS (R5)"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer",
+          "result",
+          "unwritten",
+          "missing",
+          "target_missing",
+          "no_documents",
+          "checked_at"
+        ],
+        "title": "Gate"
+      },
+      "MemoryData": {
+        "properties": {
+          "stm": {
+            "$ref": "#/components/schemas/StmView"
+          },
+          "ltm_rev": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ltm Rev"
+          },
+          "last_merged_stm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Merged Stm"
+          },
+          "tasks_rev": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasks Rev"
+          },
+          "synced_ltm_rev": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced Ltm Rev"
+          },
+          "current_phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Phase"
+          },
+          "completed_phases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Phases"
+          },
+          "archive_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Count"
+          },
+          "latest_archive_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Archive Seq"
+          },
+          "pending_cascade": {
+            "type": "string",
+            "enum": [
+              "none",
+              "ltm",
+              "tasks",
+              "plan",
+              "unknown"
+            ],
+            "title": "Pending Cascade",
+            "description": "Hook Memory.pending().level (없음 = none, 판정 불가 = unknown)"
+          },
+          "stop_blocks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Blocks",
+            "description": "Stop Hook 연속 차단 횟수 (.cascade-state.json)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stm",
+          "ltm_rev",
+          "last_merged_stm",
+          "tasks_rev",
+          "synced_ltm_rev",
+          "current_phase",
+          "completed_phases",
+          "archive_count",
+          "latest_archive_seq",
+          "pending_cascade",
+          "stop_blocks"
+        ],
+        "title": "MemoryData"
+      },
+      "Meta": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "partial",
+              "empty",
+              "error",
+              "warming"
+            ],
+            "title": "Status"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At",
+            "description": "응답 생성 시각 (RFC 3339, UTC)"
+          },
+          "source_mtime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Mtime",
+            "description": "읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "generated_at"
+        ],
+        "title": "Meta"
+      },
+      "PhaseProgress": {
+        "properties": {
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "checked": {
+            "type": "integer",
+            "title": "Checked"
+          },
+          "percent": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Percent",
+            "description": "floor(checked / total × 100), total 0 이면 0"
+          },
+          "completed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed",
+            "description": "plan completed_phases 에 있음 (plan 을 못 읽으면 null)"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current",
+            "description": "plan current_phase 와 같음 (plan 을 못 읽으면 null)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phase",
+          "title",
+          "total",
+          "checked",
+          "percent",
+          "completed",
+          "current"
+        ],
+        "title": "PhaseProgress"
+      },
+      "PipelineData": {
+        "properties": {
+          "current_stage": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Current Stage"
+          },
+          "current_stage_name": {
+            "type": "string",
+            "title": "Current Stage Name"
+          },
+          "next_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Command",
+            "description": "다음에 실행할 명령. 전체 완료면 null"
+          },
+          "all_done": {
+            "type": "boolean",
+            "title": "All Done"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/Stage"
+            },
+            "type": "array",
+            "title": "Stages"
+          },
+          "gates": {
+            "items": {
+              "$ref": "#/components/schemas/Gate"
+            },
+            "type": "array",
+            "title": "Gates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_stage",
+          "current_stage_name",
+          "next_command",
+          "all_done",
+          "stages",
+          "gates"
+        ],
+        "title": "PipelineData"
+      },
+      "PlanData": {
+        "properties": {
+          "current_phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Phase"
+          },
+          "completed_phases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Phases"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseProgress"
+            },
+            "type": "array",
+            "title": "Phases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_phase",
+          "completed_phases",
+          "phases"
+        ],
+        "title": "PlanData"
+      },
+      "SourceError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/SourceErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "SourceError"
+      },
+      "SourceErrorCode": {
+        "type": "string",
+        "enum": [
+          "SOURCE_MISSING",
+          "SOURCE_PARSE_ERROR",
+          "SOURCE_UNREADABLE",
+          "GATE_TIMEOUT",
+          "PROJECT_DIR_NOT_FOUND",
+          "SNAPSHOT_STALE"
+        ],
+        "title": "SourceErrorCode",
+        "description": "패널 `meta.error.code` (20 §5). HTTP 에러 코드 집합과 별개다."
+      },
+      "Stage": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "command": {
+            "type": "string",
+            "title": "Command"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "in_progress",
+              "waiting",
+              "unknown"
+            ],
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "command",
+          "state"
+        ],
+        "title": "Stage"
+      },
+      "StmView": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "active",
+                  "closed",
+                  "unknown"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "STM 을 읽지 못하면 null"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "elapsed_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Sec",
+            "description": "현재 − opened_at (초). 없음·형식 오류·미래면 null"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "task",
+          "team",
+          "outcome",
+          "opened_at",
+          "elapsed_sec"
+        ],
+        "title": "StmView"
+      },
+      "TaskItem": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "T-ID. 형식 불일치 줄이면 null"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Refs",
+            "description": "제목 뒤 `—` 다음의 요구사항·이슈 ID (FR-001 등)"
+          },
+          "deps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deps"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "checked": {
+            "type": "boolean",
+            "title": "Checked"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "well_formed": {
+            "type": "boolean",
+            "title": "Well Formed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "team",
+          "title",
+          "refs",
+          "deps",
+          "phase",
+          "checked",
+          "status",
+          "well_formed"
+        ],
+        "title": "TaskItem"
+      },
+      "TaskStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "done",
+          "blocked",
+          "active"
+        ],
+        "title": "TaskStatus"
+      },
+      "TasksData": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "필터 전 Phase 섹션의 Task 수"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "TasksData"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8765",
+      "description": "로컬 기본 포트"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+# AI-DLC Monitor 런타임 의존성 (ADR-006: fastapi·uvicorn(extras 없음)·pydantic + 전이 의존성 전부 == 고정)
+# 2026-10-23 T-005 에서 monitor/.venv (Python 3.13) `pip freeze` 로 기록. 고정 정책·dev 목록은 T-007(cicd) 소유.
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+click==8.5.0
+fastapi==0.161.1
+h11==0.16.0
+idna==3.20
+opentelemetry-api==1.45.1
+pydantic==2.14.1
+pydantic_core==2.50.1
+starlette==1.9.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvicorn==0.54.0
