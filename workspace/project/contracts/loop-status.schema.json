@@ -37,12 +37,15 @@
       "minimum": 0,
       "maximum": 10
     },
-    "started_at": {"type": "string", "format": "date-time", "description": "loop-start time, RFC 3339 UTC."},
-    "heartbeat_at": {"type": "string", "format": "date-time", "description": "Last write by any loop-* subcommand (wait-resume also every 30 s). RFC 3339 UTC."},
+    "started_at": {"type": "string", "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$", "description": "loop-start time, RFC 3339 UTC."},
+    "heartbeat_at": {"type": "string", "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$", "description": "Last write by any loop-* subcommand (wait-resume also every 30 s). RFC 3339 UTC."},
     "paused_since": {
       "description": "Start of the current pause episode. Set by the first wait-resume of an episode, kept across repeated wait-resume calls, cleared to null on resume. Not null iff state == paused (also kept when state becomes ended with pause_timeout).",
       "type": ["string", "null"],
-      "format": "date-time"
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
     },
     "ended_reason": {
       "description": "Why the loop ended. null unless state == ended.",
