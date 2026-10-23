@@ -1,0 +1,46 @@
+---
+adr: 001
+title: 단일 FastAPI 프로세스 모놀리스 + 원클릭 런처(run.py)
+status: proposed
+date: 2026-10-23
+author: architecture-analyst
+related: [SCOPE-01, KPI-02, NFR-001, NFR-003, CON-02, 원칙 1, 원칙 3, 03 §3, 03 §6]
+---
+# ADR-001. 단일 FastAPI 프로세스 모놀리스 + 원클릭 런처
+
+## Context
+- 03 §1 원칙 1: "내려받고 실행 파일 하나로 웹까지 뜬다". 03 §3: FastAPI 가 API 와 빌드된 Vue 정적 파일을 함께 서빙하는 단일 프로세스 모놀리스. 03 §6: `run.bat`/`run.sh` 실행, 최초 실행 시 venv·패키지 설치 자동.
+- 02 §3: 루트에 `run.py`(설치 + 서버 + 브라우저), `run.bat`/`run.sh` 는 래퍼.
+- KPI-02: 다운로드 후 첫 화면 5분 이내, 실행 동작 1회. 사용자는 Python 3.11+ 만 있다고 가정(01 §7).
+- Windows 에는 `python3` 이 없거나 Microsoft Store 안내용 가짜 실행 파일일 수 있다(`aidlc/hooks/run.sh` 가 이미 실제 실행으로 탐지).
+- 20 §2 채점: 후보 A(단일 프로세스) 125점, B 83점, C 84점.
+
+## Decision
+1. **프로세스 1개**: uvicorn 이 `monitor.backend.app.main:app` 을 worker 1개로 실행. 호스트는 코드에 `127.0.0.1` 로 고정(옵션 없음). 포트 기본 8765, `--port`/`AIDLC_MONITOR_PORT` 로만 변경.
+2. **`run.py`(표준 라이브러리만)** 순서:
+   1. `sys.version_info >= (3, 11)` 확인, 아니면 안내 후 exit 1.
+   2. `monitor/.venv` 없으면 `venv.create(with_pip=True)`.
+   3. `monitor/backend/requirements.txt` 의 sha256 을 `monitor/.venv/.requirements.sha256` 과 비교, 다르면 `<venv python> -m pip install -r ...` 후 마커 갱신.
+   4. 포트 확인: 사용 중이면 `GET /api/v1/health` 의 `app == "aidlc-monitor"` 이면 이미 실행 중 → 브라우저만 열고 종료. 아니면 다음 포트(최대 10개).
+   5. `<venv python> -m uvicorn ... --host 127.0.0.1 --port N --no-access-log` 를 자식 프로세스로 실행.
+   6. 헬스 200 까지 최대 20 s 대기 → `webbrowser.open("http://127.0.0.1:N/")` (`--no-browser` 로 생략 가능).
+   7. Ctrl+C → 자식 종료. 종료 코드 전달.
+3. **`run.sh`**: `aidlc/hooks/run.sh` 와 같은 방식으로 `python3 → python → py` 를 실제 실행해 3.11+ 인지 확인 후 `exec "$py" run.py "$@"`.
+   **`run.bat`**: `py -3 -c "import sys; sys.exit(sys.version_info < (3, 11))"` → 성공 시 `py -3 run.py %*`, 아니면 `python` 으로 같은 검사, 둘 다 실패면 설치 안내 + `pause`(더블클릭 시 창이 바로 닫히지 않게).
+4. venv 경로 차이(Windows `Scripts\python.exe`, 그 밖 `bin/python`)는 `run.py` 가 처리.
+5. 소유: cicd(런처·의존성 고정), ops(헬스·로그).
+
+## Alternatives
+- **B. 표준 라이브러리 서버 + 바닐라 JS (의존성 0)**: 원칙 3 에는 가장 맞지만 02 §1 지정 스택(FastAPI·Vue·ECharts)과 충돌(규칙 우선순위 02 > 03), 개발 속도·유지보수성 열세(20 §2, 83점).
+- **C. 수집 데몬 + SQLite 캐시 + API (2 프로세스)**: 콜드 스타트는 없지만 03 §5 "자체 데이터 저장 안 함" 위반, 프로세스 관리 추가(84점).
+- **PyInstaller 등 단일 실행 파일 배포**: 원칙 1 에 더 가깝지만 OS 별 빌드 파이프라인이 필요하고 01 §3 에서 원격 배포·CI/CD 범위 밖. 기각.
+- **uv/pipx 로 설치**: 빠르지만 사용자 PC 에 추가 도구 설치 필요(02 §11 전역 설치 금지). 기각.
+- **루트 `.venv`**: 루트를 어지럽히고 다른 Python 도구와 충돌 가능. `monitor/.venv` 선택.
+
+## Consequences
+- (+) 실행 동작 1회, Node·DB·Docker 불필요. 재실행은 설치를 건너뛰어 수 초.
+- (+) 중복 실행 시 새 서버를 띄우지 않고 기존 화면을 연다.
+- (−) 최초 실행에는 PyPI 접속이 필요(유일한 외부 네트워크 사용, NFR-005 예외로 명시). 오프라인 PC 는 미지원.
+- (−) 프로세스 재시작 시 사용량 캐시 재구축(ADR-002 데우기로 완화).
+- `.gitignore` 에 `monitor/.venv/` 추가(cicd).
+- 검증: KPI-02 리허설(Windows 1회 + macOS/Linux 1회), 런처 단위 테스트(해시 마커·포트 선택 로직은 함수로 분리해 pytest).
