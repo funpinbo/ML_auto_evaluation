@@ -104,11 +104,59 @@ AIDLC-LOOP <subcommand> <RESULT> key=value ...
 - `running` 중에는 사이클 경계(`loop-check`)에서만 갱신된다(Task 하나가 오래 걸릴 수 있음) → 대시보드는 `running` 상태에서 heartbeat 나이로 세션 생존을 판정하지 **않는다**(ADR-004 §4 표대로 세션 활동은 최근 JSONL 시각으로 표시).
 - `paused` 상태에서 `heartbeat_age > 120 s` → 대시보드 표시 "세션 없음"(no_session). 반복 호출 사이 간격은 수 초라 정상 대기는 120 s 를 넘지 않는다. 감지 ≤ 2분(QS-11).
 
-## 7. `baseline_seq` 의미
+## 7. `baseline_seq` 의미와 `seq` 발급 규칙
 - `loop-start` 시점의 control `seq`. 이 값 **이하**의 요청은 이번 루프에 적용되지 않는다 → 이전 루프에서 남은 `pause` 가 새 루프를 멈추지 않는다(ADR-004 Consequences).
 - 루프 도중에는 바뀌지 않는다. 같은 루프에서 일시정지 → 재개 → 다시 일시정지도 동작한다: 쓰기마다 seq 가 증가하므로 판정은 항상 "최신 요청(seq > baseline)의 state".
-- 대시보드는 control 파일이 없거나 broken 일 때 이전 seq 를 0 으로 보고 1부터 쓴다. 이 경우 CLI 의 baseline 도 0 이므로 새 요청은 적용된다.
 - 대시보드 화면 판정(ADR-004 §4)의 "control (seq > baseline)" 열도 같은 규칙을 쓴다.
+
+### 7.1 대시보드의 다음 seq (I-16 해결, ADR-004 Decision 1.1)
+대시보드는 `.control.json` 을 쓸 때마다 다음 값을 **두 파일을 새로 읽어** 계산한다(메모리에 seq 를 캐시하지 않는다).
+```
+prev     = .control.json 의 seq   (파일이 정상일 때만, 없음/broken 이면 0)        — §2.1 판독 규칙
+baseline = loop-status.json 의 baseline_seq (loop-status.schema.json 에 맞을 때만, 없음/깨짐이면 0)
+next_seq = max(prev, baseline) + 1
+```
+- 정상 경로에서는 `prev ≥ baseline` 이므로 `next_seq = prev + 1`(기존 규칙과 같음, FR-005 AC-1·AC-4·AC-10).
+- 루프 도중 제어 파일이 삭제·손상되면 `prev = 0` 이 되지만 `baseline` 이 하한이 되어 `next_seq = baseline + 1 > baseline` → **CLI 가 다음 POST 를 새 요청으로 적용한다**(AC-18 "다음 POST 로 복구").
+- `ended` 인 loop-status 의 baseline 도 그대로 쓴다(값이 커질 뿐 해가 없음). loop-status 가 없거나 깨졌으면 활성 루프가 없다는 뜻이고(§3.2 `NO_LOOP`), pause 는 409 로 쓰지 않으며 resume 이 쓴 seq 는 다음 `loop-start` 의 baseline 이 될 뿐이다.
+- 대시보드는 `loop-status.json` 을 **읽기만** 한다(이미 `GET /control` 의 읽기 대상). 파일별 작성자는 그대로다(R-10, D-04).
+- `max_pause_sec`: pause 는 요청 본문 값(기본 7200), resume 은 `prev` 가 정상일 때 그 값을 유지하고 아니면 7200.
+
+### 7.2 CLI 쪽 규칙 (변경 없음, 명시)
+- CLI 판정은 매 판독마다 `(control.seq > baseline_seq, control.state)` 만 본다. 이전에 본 seq 를 기억하거나 "seq 가 바뀌었는지" 로 판정하지 않는다 → 제어 파일 재생성으로 같은 seq 값이 다시 쓰여도(예: 삭제 전 8, 재생성 후 8) 판정이 맞다.
+- 제어 파일 **없음** 은 `seq 0, running`(정상, 경고 없음)이라 일시정지·재개 어느 쪽도 일으키지 않는다. 대기 중 파일이 사라지면 계속 대기한다(§3.3).
+- 제어 파일 **broken** 은 exit 2(계속 진행, 대기 중이면 재개 — §3.3, AC-18).
+
+### 7.3 경쟁 조건
+| 경우 | 처리 |
+|------|------|
+| 대시보드가 쓰는 중 CLI 가 읽음 | 같은 디렉터리 임시 파일 → `os.replace` 이므로 CLI 는 이전 파일 또는 새 파일 전체만 본다. 반쪽 파일 없음 |
+| 대시보드 POST 두 개가 동시에 도착 | 대시보드 프로세스(단일 프로세스, ADR-001) 안의 **락 하나**로 "두 파일 읽기 → next_seq 계산 → 쓰기" 전체를 직렬화한다. 두 요청은 서로 다른 연속 seq 를 받고, 파일에는 나중 요청이 남는다(최신 요청 우선) |
+| CLI 가 loop-status 를 쓰는 중 대시보드가 baseline 을 읽음 | CLI 도 원자적 교체 → 이전/새 파일 중 하나. 루프 도중 `baseline_seq` 는 바뀌지 않으므로 어느 쪽이든 같은 값 |
+| POST 와 `loop-start` 가 거의 동시 | `loop-start` 가 제어 파일을 읽기 **전**에 쓰인 요청은 이번 루프의 baseline 이하 → 무시(루프 시작 전 요청, AC-12 와 같은 의미). 읽은 **후**에 쓰인 요청은 `next_seq ≥ 그 시점 seq + 1 > baseline` → 적용. 어느 순서든 파일 단일 작성자·seq 단조성은 유지 |
+| Windows 에서 읽는 쪽이 파일을 연 순간 `os.replace` 가 `PermissionError` | 쓰는 쪽이 짧게 재시도(권고: 최대 5회, 50 ms 간격). 대시보드는 끝내 실패하면 500 `CONTROL_WRITE_FAILED`(AC-20, 기존 파일 보존). CLI 는 §2 대로 경고만 |
+| 대시보드 프로세스가 2개 이상 | 계약 범위 밖(ADR-001 이 중복 실행을 막음). 이 경우 락이 공유되지 않아 seq 중복이 가능하다 |
+
+### 7.4 테스트 시나리오 (T-008 이 그대로 테스트로 옮긴다)
+공통: baseline = 7 인 활성 루프(`loop-start` 당시 control seq 7). "POST" = 대시보드 `POST /api/v1/control/pause|resume`. 시계·sleep 주입.
+
+| # | 준비 | 동작 | 기대 결과 |
+|---|------|------|-----------|
+| SQ-1 | running, control seq 9 `running` | 제어 파일 삭제 → `loop-check 1` | exit 0 `CONTINUE`(없음 = 정상, 경고 없음, stderr 비어 있음) |
+| SQ-2 | SQ-1 이후 | POST pause → `loop-check 1` | 파일 `seq 8, pause`(schema 통과) → exit 10 `PAUSE` |
+| SQ-3 | paused(wait-resume 중), control seq 8 `pause` | 제어 파일 삭제 → 3 tick 경과 | 계속 대기(exit 없음), loop-status `paused` 유지 |
+| SQ-4 | SQ-3 이후 | POST resume | 파일 `seq 8, running` → 다음 1초 tick 안에 wait-resume exit 0 `RESUMED` |
+| SQ-5 | paused, control seq 8 `pause` | 제어 파일을 잘린 JSON 으로 교체 | 다음 tick 에 wait-resume exit 2 `CONTROL_BROKEN`, loop-status `running`·`paused_since null` (AC-18) |
+| SQ-6 | SQ-5 이후(파일 여전히 broken) | `loop-check 2` → POST resume → `loop-check 2` | 첫 호출 exit 2. POST 후 파일 `seq 8, running` → exit 0 `CONTINUE` |
+| SQ-7 | running, 제어 파일 broken | POST pause → `loop-check 1` | 파일 `seq 8, pause` → exit 10 (손상된 파일에서 다음 POST 로 복구) |
+| SQ-8 | running, control seq 9 | 대시보드 재시작 후 POST pause | 파일 `seq 10, pause`(재시작 전과 같은 결과 — 메모리 상태 없음) |
+| SQ-9 | running, 제어 파일 없음 | 대시보드 재시작 후 POST pause | 파일 `seq 8, pause` → `loop-check` exit 10 |
+| SQ-10 | running, control seq 9 `running` | POST pause, POST resume 를 연달아(동시 스레드 포함) | 서로 다른 seq 10·11, 파일 최종 = 나중에 처리된 요청. pause→resume 순이면 `loop-check` exit 0(AC-8 과 같음) |
+| SQ-11 | running, control seq 9 | POST pause 두 개 동시 | seq 10·11 둘 다 pause, 최종 파일 seq 11, 유실·중복 seq 없음, 파일 schema 통과 |
+| SQ-12 | loop-status 없음, 제어 파일 없음 | POST resume → `loop-start 2` | 파일 `seq 1, running`, loop-start `baseline=1`. POST pause 는 409 `NO_ACTIVE_LOOP`, 파일 무변경 |
+| SQ-13 | running, control seq 3(수동 편집으로 baseline 7 보다 작음) | POST pause → `loop-check 1` | 파일 `seq 8, pause` → exit 10 |
+| SQ-14 | loop-start 시 제어 파일 broken (baseline 0, exit 2) | POST pause → `loop-check 1` | 파일 `seq 1, pause` → exit 10 |
+| SQ-15 | 모든 SQ | - | CLI 는 `.control.json` 을 만들거나 고치지 않음(mtime·내용 불변), 대시보드는 `loop-status.json` 을 쓰지 않음(R-10) |
 
 ## 8. 상태 전이
 ```
@@ -131,4 +179,4 @@ running|paused --loop-end--> ended(reason)
 - `--max-wait` 기본 540 은 Bash 600 s 상한 아래 여유를 둔 값. R-01 스파이크에서 실질 상한이 낮으면 스킬 쪽 인자만 낮춘다(예: `--max-wait 50`) — 계약 변경 아님.
 
 ## 10. 테스트 기준 (qa / backend)
-- 상태 전이 표 전체, exit code 5종(0/10/20/2/64), `baseline_seq` 로 오래된 pause 무시, 같은 루프 재일시정지, `paused_since` 누적(반복 호출), 상한 초과, max-wait 반환, 제어 파일 없음/깨짐/스키마 위반, 쓰기 결과가 `loop-status.schema.json` 에 맞음, CLI 가 `.control.json` 을 절대 쓰지 않음, 시간 주입(시계·sleep 대체)으로 빠르게 실행.
+- 상태 전이 표 전체, exit code 5종(0/10/20/2/64), `baseline_seq` 로 오래된 pause 무시, §7.4 SQ-1~SQ-15(제어 파일 삭제·손상 후 복구, 대시보드 재시작, 연속 POST), 같은 루프 재일시정지, `paused_since` 누적(반복 호출), 상한 초과, max-wait 반환, 제어 파일 없음/깨짐/스키마 위반, 쓰기 결과가 `loop-status.schema.json` 에 맞음, CLI 가 `.control.json` 을 절대 쓰지 않음, 시간 주입(시계·sleep 대체)으로 빠르게 실행.

@@ -12,7 +12,7 @@
       "const": 1
     },
     "seq": {
-      "description": "Monotonic request counter. Every write (pause or resume, including idempotent re-writes) sets seq = previous seq + 1. First write = 1. If the existing file is missing or broken the writer treats previous seq as 0.",
+      "description": "Monotonic request counter. Every write (pause or resume, including idempotent re-writes) sets seq = max(prev, baseline) + 1, where prev = seq of the existing .control.json (0 if missing or broken) and baseline = baseline_seq of loop-status.json (0 if missing or not valid against loop-status.schema.json). Both files are re-read on every write (no in-memory cache) under one in-process lock. This keeps a write after the control file was deleted or corrupted mid-loop above the running loop's baseline_seq, so the CLI applies it (I-16). The CLI compares only seq > baseline_seq and never tracks seq changes, so a re-created file may reuse an earlier seq value. loop-cli.md §7, ADR-004 Decision 1.1.",
       "type": "integer",
       "minimum": 1
     },

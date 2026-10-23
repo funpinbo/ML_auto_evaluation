@@ -23,6 +23,7 @@ related: [FR-005, FR-003, A7, A8, Q5, Q6, CON-03, 원칙 2, 03 §5, 03 §9, 03 �
    - `workspace/memory/.monitor/loop-status.json` — **루프 제어 CLI 만 쓴다**(세션의 실제 상태):
      `{"schema": 1, "run_id", "state": "running" | "paused" | "ended", "baseline_seq", "iterations_total", "iterations_done", "started_at", "heartbeat_at", "paused_since", "ended_reason"}`.
    - 대시보드의 쓰기는 여전히 `.control.json` 하나(원칙 2 유지). 두 파일 모두 gitignore. Hook 판정 대상 아님.
+   - **1.1 seq 발급 규칙 (I-16)**: 대시보드는 쓸 때마다 `next_seq = max(prev, baseline) + 1` 로 계산한다. `prev` = 기존 `.control.json` seq(없음/broken 이면 0), `baseline` = `loop-status.json` 의 `baseline_seq`(없음/스키마 위반이면 0). 두 파일을 매번 새로 읽고(메모리 캐시 없음, 재시작 무관) 프로세스 안 락 하나로 "읽기 → 계산 → 원자적 쓰기" 를 직렬화한다. 루프 도중 제어 파일이 삭제·손상돼도 다음 POST 는 `baseline + 1` 이상이 되어 CLI 가 적용한다(FR-005 AC-18 복구 경로). CLI 판정은 그대로 `seq > baseline_seq` 와 `state` 만 본다(이전 seq 를 기억하지 않음). 대시보드의 loop-status 접근은 읽기뿐이라 파일당 작성자 1명(D-04, R-10)은 유지된다. 상세·시나리오 SQ-1~SQ-15: `contracts/loop-cli.md` §7.
 2. **CLI (`aidlc/scripts/loop_control.py`, `aidlc.py` 서브커맨드, 표준 라이브러리)**
    - `loop-start <N>`: 새 `run_id`, `baseline_seq = 현재 .control.json seq`(시작 전에 남아 있던 요청은 무시), state running. exit 0.
    - `loop-check <done>`: `iterations_done`·`heartbeat_at` 갱신. `.control.json` 의 `seq > baseline_seq` 이고 `state == "pause"` 면 exit 10(일시정지), 아니면 exit 0.
@@ -53,10 +54,18 @@ related: [FR-005, FR-003, A7, A8, Q5, Q6, CON-03, 원칙 2, 03 §5, 03 §9, 03 �
 - **D. Bash `run_in_background` + 알림으로 대기**: 대기 중 세션이 응답을 끝내 Stop Hook 이 돌고 루프 문맥이 끊길 수 있음, 동작 보장 불명. 기각.
 - **E. Hook(memory_cascade.py) 에 제어 로직 추가**: Hook 은 cascade 전용으로 두는 편이 유지보수에 낫다. 기각.
 
+- **F. (I-16 대안) CLI 가 "제어 파일이 직전에 없음/broken 이었으면 seq 증가가 아니라 변경만으로 새 요청" 으로 판정**: loop-check·wait-resume 는 호출마다 새 프로세스라 "직전 상태" 를 `loop-status.json` 에 저장해야 함(스키마 변경, CLI 상태 증가). 제어 파일 없음은 정상 상태(루프 시작 전 흔함)라 "없음 → seq 1" 을 새 요청으로 볼지 판정이 모호하고, 1초 tick 사이에 삭제 → 재생성이 끝나면 변화를 놓친다. 기각.
+- **G. (I-16 대안) 시각 기반 요청 id(예: epoch ms)**: 이전 값 없이도 대개 커지지만 벽시계는 단조가 아니다(NTP 보정·수동 변경으로 뒤로 가면 baseline 이하가 됨). 테스트에 시계 주입이 필요해지고 seq 의미가 바뀌어 계약 변경이 크다. 결정적이지 않아 기각. 원칙 3(표준 라이브러리) 관점에서는 모두 동등.
+
 ## Consequences
 - (+) 쓰기 경쟁 없음, 오래된 일시정지 요청이 새 루프를 멈추지 않음(`baseline_seq`).
 - (+) Task·cascade 중간에는 절대 멈추지 않음(사이클 경계에서만 확인).
 - (−) 대기 중 약 9분마다 대기 호출 1회분 토큰·컨텍스트 소비(2시간 = 약 14회). Bash 실질 상한이 낮으면 `--max-wait` 를 낮춰 호출 수 증가.
 - (−) 세션(VS Code 창)이 닫히면 자동 재개 불가 → "세션 없음" 표시 + 재실행 안내.
 - (−) 프레임워크 파일(SKILL.md, aidlc.py) 변경 → architecture 리뷰, `docs/aidlc` 는 수정하지 않음(CLAUDE.md).
+- (+) I-16 해결: 제어 파일 삭제·손상 후에도 다음 POST 로 복구(AC-18). 수정은 대시보드 쪽 seq 계산 하나이고 CLI·스키마 구조·`schema_version` 은 그대로(하위 호환).
+- (−) 대시보드 쓰기 경로가 loop-status 읽기에 의존한다(읽기 실패 시 baseline 0 → 그때는 활성 루프도 없음).
 - 검증: 02 §5 필수 "일시정지/재개 시나리오 테스트"(상태 전이 표 전체, 타임아웃, 깨진 파일, 오래된 요청 무시) + 1주차 실제 `/aidlc-run 3` 리허설(30분·2시간).
+
+## 변경 이력
+- 2026-10-23 T-026 (I-16): Decision 1.1 seq 발급 규칙 추가 — `next_seq = max(이전 seq(없음/broken 이면 0), loop-status.baseline_seq(없음/깨짐이면 0)) + 1`, 매 쓰기마다 두 파일 재판독 + 프로세스 내 락. Alternatives F(CLI 변경 감지)·G(시각 기반 id) 기각. 근거: 원칙 2(대시보드 쓰기는 `.control.json` 하나 유지), D-04/R-10(파일당 작성자 1명), 03 §9(루프 제어 방식은 ADR 필수). 계약: `contracts/loop-cli.md` §7, `control.schema.json` `seq` 설명. 파일 형식·CLI 동작 변경 없음.
