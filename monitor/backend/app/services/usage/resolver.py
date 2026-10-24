@@ -21,6 +21,7 @@ from enum import Enum
 from pathlib import Path
 
 from app.services.usage.privacy_filter import USAGE_NEEDLE, extract_cwd
+from app.services.usage.safe_open import open_regular
 
 # contracts/claude-status.schema.json `transcript_dir_name.pattern` 과 문자 그대로 같다 (P-25 diff 대상).
 DIR_NAME_PATTERN = r"^(?!\.{1,2}(?![\s\S]))[A-Za-z0-9._-]{1,255}(?![\s\S])"
@@ -49,6 +50,9 @@ class Resolution:
     path: Path | None  # resolve() 된 프로젝트 디렉터리. 응답·로그에 내보내지 않는다
     source: ResolveSource | None
     hint_problem: HintProblem | None = None
+    skipped_files: int = (
+        0  # 폴백 탐색에서 안전 열기 검사로 거부한 파일 수 (하드 링크·비정규 파일)
+    )
 
 
 def encode_project_path(path: str | os.PathLike[str]) -> str:
@@ -118,13 +122,14 @@ def iter_jsonl(
             yield entry
 
 
-def _file_has_cwd(path: str, repo: str) -> bool:
-    """사전 필터를 통과한 줄에서만 `cwd` 를 꺼내 비교하고 바로 버린다."""
-    try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-    except OSError:
-        return False
-    with os.fdopen(fd, "rb") as fh:
+def _file_has_cwd(path: str, repo: str, root: Path) -> bool | None:
+    """사전 필터를 통과한 줄에서만 `cwd` 를 꺼내 비교하고 바로 버린다. 안전 열기 거부 = None."""
+    if not inside(root, path):
+        return None
+    opened = open_regular(path)
+    if opened is None:
+        return None
+    with os.fdopen(opened[0], "rb") as fh:
         read = 0
         for n, raw in enumerate(fh):
             read += len(raw)
@@ -138,13 +143,23 @@ def _file_has_cwd(path: str, repo: str) -> bool:
     return False
 
 
-def _scan_cwd(projects: Path, repo: str, now: float) -> Path | None:
+def inside(root: Path, path: str) -> bool:
+    """실제 경로가 `root` 하위인지 (symlink 이탈 2차 검사)."""
+    try:
+        real = os.path.realpath(path)
+    except (OSError, ValueError):
+        return False
+    return real.startswith(str(root).rstrip(os.sep) + os.sep)
+
+
+def _scan_cwd(projects: Path, repo: str, now: float) -> tuple[Path | None, int]:
     cutoff = now - MAX_AGE_SEC
+    skipped = 0
     try:
         with os.scandir(projects) as it:
             names = sorted(e.name for e in it)
     except OSError:
-        return None
+        return None, 0
     for name in names:
         if not valid_dir_name(name):
             continue
@@ -157,9 +172,12 @@ def _scan_cwd(projects: Path, repo: str, now: float) -> Path | None:
             reverse=True,
         )
         for entry in files[:20]:
-            if _file_has_cwd(entry.path, repo):
-                return candidate
-    return None
+            result = _file_has_cwd(entry.path, repo, candidate)
+            if result is None:
+                skipped += 1
+            elif result:
+                return candidate, skipped
+    return None, skipped
 
 
 def _mtime(entry: os.DirEntry[str]) -> float:
@@ -222,7 +240,8 @@ def resolve_project_dir(
                 else HintProblem.OUTSIDE_PROJECTS
             )
     if allow_cwd_scan:
-        found = _scan_cwd(projects, repo, now)
+        found, skipped = _scan_cwd(projects, repo, now)
         if found is not None:
-            return Resolution(found, ResolveSource.cwd, problem)
+            return Resolution(found, ResolveSource.cwd, problem, skipped)
+        return Resolution(None, None, problem, skipped)
     return Resolution(None, None, problem)

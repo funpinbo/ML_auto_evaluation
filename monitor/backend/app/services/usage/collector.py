@@ -6,6 +6,7 @@
 - 탐색은 `<project>/**/*.jsonl`(subagents/ 포함), mtime 30일 이내, symlink 는 따라가지 않고 열 때도
   `O_NOFOLLOW`. 실제 경로가 프로젝트 디렉터리 밖이면 열지 않는다(P-29, `creds-link.jsonl` 케이스).
   하드 링크(`st_nlink > 1`)는 `resolve()` 로 이탈을 판정할 수 없으므로 건너뛴다(I-10, 보수적 기본값).
+  여는 것은 모두 `safe_open.open_regular`(lstat → O_NOFOLLOW|O_NONBLOCK → fstat 대조) — 해석기 폴백도 같다.
 - 데우기: 백그라운드 스레드 1개가 mtime 내림차순으로 읽는다. `progress()` 는 I/O 없이 즉시 반환한다.
 - 로그는 고정 문구 + 건수·코드만 (NFR-002, 20 §6). 경로·이름·줄 내용은 쓰지 않는다.
 """
@@ -30,9 +31,11 @@ from app.services.usage.resolver import (
     MAX_AGE_SEC,
     Resolution,
     ResolveSource,
+    inside,
     iter_jsonl,
     resolve_project_dir,
 )
+from app.services.usage.safe_open import open_regular
 
 log = logging.getLogger("aidlc_monitor.usage")
 
@@ -47,7 +50,7 @@ MSG_NOT_FOUND = "이 프로젝트의 Claude Code 기록 폴더를 찾지 못했�
 MSG_HINT = "상태 스냅샷의 기록 폴더 힌트를 무시했습니다: %s"
 MSG_SKIPPED = "사용량 기록 형식 오류 %d줄을 건너뛰었습니다"
 MSG_ANON = "requestId 없는 사용량 응답 %d건을 중복 제거 없이 집계했습니다"
-MSG_LINKS = "링크(심볼릭·하드) 기록 파일 %d개를 건너뛰었습니다"
+MSG_LINKS = "하드 링크·일반 파일 아님·경계 밖 기록 파일 %d개를 건너뛰었습니다"
 MSG_WARMUP_FAILED = "사용량 데우기 오류: %s"
 MSG_REFRESH_FAILED = "사용량 갱신 오류: %s"
 
@@ -215,6 +218,14 @@ class UsageCollector:
         if allow_scan:
             self._last_cwd_scan = mono
         self._resolution = res
+        if res.skipped_files:
+            self._log_once(
+                "links-fallback",
+                res.skipped_files,
+                log.warning,
+                MSG_LINKS,
+                res.skipped_files,
+            )
         if res.hint_problem is not None:
             self._log_once(
                 "hint", res.hint_problem, log.warning, MSG_HINT, res.hint_problem.value
@@ -255,7 +266,7 @@ class UsageCollector:
                 st = entry.stat(follow_symlinks=False)
             except OSError:
                 continue
-            if st.st_nlink > 1 or not self._inside(root, entry.path):
+            if st.st_nlink != 1 or not inside(root, entry.path):
                 links += 1
                 continue
             entries.append((entry.path, st))
@@ -280,7 +291,8 @@ class UsageCollector:
             if self._stop.is_set():
                 break
             latest = st.st_mtime_ns if latest is None else max(latest, st.st_mtime_ns)
-            self._read_file(path, st, track_progress)
+            if not self._read_file(path, st, track_progress):
+                links += 1
         if links:
             self._log_once("links", links, log.warning, MSG_LINKS, links)
         with self.store.lock:
@@ -295,21 +307,13 @@ class UsageCollector:
         if anon > 0:
             log.warning(MSG_ANON, anon)
 
-    @staticmethod
-    def _inside(root: Path, path: str) -> bool:
-        try:
-            real = os.path.realpath(path)
-        except (OSError, ValueError):
-            return False
-        base = str(root)
-        return real.startswith(base.rstrip(os.sep) + os.sep)
-
     # ================================================================ 파일 1개 증분 읽기
-    def _read_file(self, path: str, st: os.stat_result, track: bool) -> None:
+    def _read_file(self, path: str, st: os.stat_result, track: bool) -> bool:
+        """False = 안전 열기 검사에서 거부 (건수만 WARN)."""
         cursor = self._cursors.get(path)
         if cursor is not None and (cursor.ino, cursor.dev) == (st.st_ino, st.st_dev):
             if st.st_size == cursor.size and st.st_mtime_ns == cursor.mtime_ns:
-                return  # 변화 없음 — 열지 않는다
+                return True  # 변화 없음 — 열지 않는다
             if st.st_size < cursor.offset:
                 self._reset(cursor)  # 잘림 → 처음부터
         elif cursor is not None:
@@ -319,19 +323,14 @@ class UsageCollector:
             cursor = FileCursor(self._next_id, st.st_dev, st.st_ino, 0, 0, 0)
             self._next_id += 1
             self._cursors[path] = cursor
-        try:
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        except OSError:
-            return
+        opened = open_regular(path, expect=st)
+        if opened is None:
+            return False  # 탐색과 열기 사이에 링크·비정규 파일로 바뀜 → 건너뜀 (다음 주기 재검사)
+        fd, fst = opened
         with os.fdopen(fd, "rb") as fh:
-            fst = os.fstat(fd)
-            if not stat.S_ISREG(fst.st_mode) or (fst.st_dev, fst.st_ino) != (
-                st.st_dev,
-                st.st_ino,
-            ):
-                return  # 탐색과 열기 사이에 바뀜 → 다음 주기
             self._consume(fh, cursor, fst.st_size, track)
             cursor.size, cursor.mtime_ns = fst.st_size, fst.st_mtime_ns
+        return True
 
     def _reset(self, cursor: FileCursor) -> None:
         with self.store.lock:

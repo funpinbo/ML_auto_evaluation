@@ -334,7 +334,8 @@ def test_credentials_link_never_read_anywhere(
     assert str(symlink_escape.outside_file) not in seen
 
 
-def test_hardlinked_files_are_skipped(tmp_path, caplog) -> None:
+def test_hardlinked_files_are_skipped(tmp_path, caplog, monkeypatch) -> None:
+    opened = _spy_os_open(monkeypatch)
     home = tmp_path / "home"
     proj = home / "projects" / "p"
     outside = write_jsonl(
@@ -349,8 +350,49 @@ def test_hardlinked_files_are_skipped(tmp_path, caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="aidlc_monitor"):
         col.ensure_fresh()
     assert _totals(col) == [1, 1, 2, 3, 4]
-    assert "링크(심볼릭·하드) 기록 파일 1개를 건너뛰었습니다" in caplog.text
+    assert (
+        "하드 링크·일반 파일 아님·경계 밖 기록 파일 1개를 건너뛰었습니다" in caplog.text
+    )
     assert str(tmp_path) not in caplog.text
+    assert not [
+        p for p in opened if os.path.basename(p) in ("hard.jsonl", "outside.jsonl")
+    ]
+
+
+def _spy_os_open(monkeypatch) -> list[str]:
+    opened: list[str] = []
+    real = os.open
+
+    def spy(path, *a, **k):
+        opened.append(os.fspath(path))
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(os, "open", spy)
+    return opened
+
+
+def test_hardlink_swapped_in_after_scan_is_not_read(tmp_path, monkeypatch) -> None:
+    """탐색 뒤 열기 전에 하드 링크로 바뀌어도(TOCTOU) 열기 단계 검사가 거부한다."""
+    from app.services.usage import safe_open
+
+    home = tmp_path / "home"
+    proj = home / "projects" / "p"
+    target = write_jsonl(proj / "s.jsonl", [usage_line("r1")])
+    outside = write_jsonl(
+        tmp_path / "secret.jsonl", [usage_line("leak", (424242, 0, 0, 0))]
+    )
+    real_lstat = os.lstat
+
+    def swap(path, *a, **k):
+        if os.fspath(path) == str(target) and not os.path.samefile(target, outside):
+            target.unlink()
+            os.link(outside, target)
+        return real_lstat(path, *a, **k)
+
+    monkeypatch.setattr(safe_open.os, "lstat", swap)
+    col = make_collector(home, tmp_path, hint="p")
+    col.ensure_fresh()
+    assert _totals(col)[0] == 0
 
 
 # ---------------------------------------------------------------- 증분 커서 (ADR-002 §2, P-07)

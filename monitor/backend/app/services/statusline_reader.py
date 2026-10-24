@@ -3,7 +3,7 @@
 - 읽기만 한다(작성자는 status line 스크립트 하나). 없음·깨짐·스키마 버전 불일치에 견딘다.
 - 관대한 읽기와 별개로 보안 필드 `transcript_dir_name` 은 계약 pattern 으로 **재검증**한다(P-25). 실패하면
   힌트를 버린다. 이 값은 해석기(resolver)에만 넘기고 API 응답·로그에 넣지 않는다(D-13).
-- 파일 크기 상한·정규 파일 확인으로 FIFO·거대 파일에 막히지 않는다.
+- 파일 크기 상한·`safe_open.open_regular`(lstat·O_NOFOLLOW·O_NONBLOCK·fstat 대조)로 symlink·하드 링크·FIFO·거대 파일을 거부한다.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 from app.services.usage.privacy_filter import parse_timestamp
 from app.services.usage.resolver import valid_dir_name
+from app.services.usage.safe_open import open_regular
 
 MAX_SNAPSHOT_BYTES = 64 * 1024
 STALE_AFTER_SEC = 600  # ADR-003 §4: 10분 초과 = SNAPSHOT_STALE (600 s 는 경고 없음)
@@ -130,21 +131,25 @@ class StatuslineReader:
 
     def read(self) -> Snapshot:
         try:
-            st = os.stat(self.path)
+            st = os.lstat(self.path)
         except (FileNotFoundError, NotADirectoryError):
             return Snapshot("missing")
         except (OSError, ValueError):
             return Snapshot("unreadable")
-        if not stat.S_ISREG(st.st_mode):
-            return Snapshot("unreadable")
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            return Snapshot("unreadable")  # symlink·하드 링크·FIFO·디렉터리
         if st.st_size > MAX_SNAPSHOT_BYTES:
             return Snapshot("broken", mtime=st.st_mtime)
+        opened = open_regular(self.path, expect=st)
+        if opened is None:
+            return Snapshot("unreadable")
         try:
-            fd = os.open(self.path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
-            with os.fdopen(fd, "rb") as fh:
+            with os.fdopen(opened[0], "rb") as fh:
                 raw = fh.read(MAX_SNAPSHOT_BYTES + 1)
         except (OSError, ValueError):
             return Snapshot("unreadable")
+        if len(raw) > MAX_SNAPSHOT_BYTES:
+            return Snapshot("broken", mtime=st.st_mtime)
         try:
             doc = json.loads(raw)
         except (ValueError, RecursionError):

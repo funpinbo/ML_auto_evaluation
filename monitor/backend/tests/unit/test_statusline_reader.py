@@ -118,3 +118,14 @@ def test_tolerant_field_values() -> None:
     assert snap.five_hour.resets_at is None and snap.seven_day is None
     assert snap.total_cost_usd is None and snap.context_used_percentage is None
     assert snap.context_window_size is None
+
+
+def test_symlink_and_hardlink_snapshot_are_unreadable(reader, tmp_path) -> None:
+    src = tmp_path / "elsewhere.json"
+    write_json(src, claude_status_doc("normal"))
+    reader.path.parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(src, reader.path)
+    assert reader.read().state == "unreadable"
+    reader.path.unlink()
+    os.link(src, reader.path)
+    assert reader.read().state == "unreadable"
