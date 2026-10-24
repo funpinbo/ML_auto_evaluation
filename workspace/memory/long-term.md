@@ -1,6 +1,6 @@
 ---
-rev: 14
-last_merged_stm: 14
+rev: 15
+last_merged_stm: 15
 ---
 # Long-term Memory
 
@@ -54,6 +54,8 @@ last_merged_stm: 14
 | D-41 | **R-01 완화**: 서브에이전트 Bash 도구(Linux)에서 `wait-resume --max-wait 120/300/540` 이 끊김 없이 exit 10 반환(120.13/300.24/540.37 s), 대기 중 resume 을 0.93 s 만에 감지(exit 0), `paused_since` 는 호출 간 유지. 01 §10 의 같은 세션 대기 설계 유지, 기본 540 s 유지, 후퇴안(대안 B) 불필요. **단서**: 사용자 메인 세션·Windows 미측정 → T-014 UAT 재측정 | ADR-004 R-01 | 대안 B(루프 종료+재입력) | (STM-0014) |
 | D-42 | 엄격 정수 술어는 CLI(stdlib 단독)와 대시보드에 **사본**으로 두고 `test_loop_strict_parity` 교차 테스트로 판정 일치를 강제 — CLI 를 앱과 결합하지 않기 위함(ADR-009, 원칙 2) | 결합 회피 | 공유 import | (STM-0014, architecture 승인) |
 | D-43 | 제어 API: loop-status 없음 = 상태 `ended`(V1) + `meta.status=empty`; pause 는 활성 루프 없으면 409 `NO_ACTIVE_LOOP`, resume 은 항상 200; resume 본문은 `{}` 만(그 외 422); 대시보드는 디렉터리를 만들지 않음(workspace/memory 없으면 500 CONTROL_WRITE_FAILED). 쓰기는 같은 디렉터리 mkstemp → fsync → os.replace, 심볼릭 링크는 링크만 교체 | FR-005, 원칙 2 | - | (STM-0014) |
+| D-44 | `/aidlc-run` 루프 경계(SKILL.md): 시작 `loop-start N` → 각 사이클 7단계(cascade) 뒤 `loop-check <done>`(마지막 사이클 뒤엔 호출 안 함) → exit 10 이면 `wait-resume` 반복(Bash timeout 600000, 기본 540 s) → 끝에 `loop-end done|blocked|no_task --done n`. exit code 로만 분기(`; echo "exit=$?"`): 0 계속/재개, 10 대기, 20 상한 초과 → loop-end 생략하고 보고(CLI 가 ended·pause_timeout 기록), 2·1 경고 후 계속, 64 → `loop-end blocked --done <i>` 후 중단·버그 보고. 두 파일 쓰기 금지, `run_in_background` 금지, Python 은 python3 → python → py -3 실제 실행 확인 | ADR-004 Decision 3 accepted | - | (STM-0015) |
+| D-45 | 대기 중 세션이 사라지면 화면은 V6 "세션 없음" 고정. 재개를 누를 필요 없이 `/aidlc-run <남은 수>` 만 실행 — 새 loop-start 의 baseline 이 남은 요청을 무효화. 사이클 진행 중 세션이 닫히면 V3 "실행 중" 으로 남는다(D-11) | 운영 절차 | - | (STM-0015, ops 리뷰) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -100,13 +102,14 @@ last_merged_stm: 14
 - 긴 대기·상한 테스트는 `SimClock` 가상 시계(tick 주입)로 — 7200 s·540 s 를 실제로 기다리지 않는다 (STM-0014)
 - 단일 작성자 규칙은 모든 CLI 호출·POST 전후 상대 파일 바이트 불변을 래퍼에서 검사, seq 연속성은 응답이 아니라 쓰기 spy 로 검증 (STM-0014)
 - 락·대기를 다루는 테스트는 별도 스레드 + `join(timeout)` 으로 경계를 둔다 — 없으면 회귀가 FAIL 이 아니라 스위트 멈춤으로 나타난다 (STM-0014, qa 변이 검사)
+- Task 지시와 계약이 다르면 계약을 따른다 — T-009 에서 지시의 loop-end reason(completed 등)이 계약에 없어 실제 CLI 로 확인 후 계약값 사용 (STM-0015)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
 |----|------|-----------|------|------|
 | ~~I-01~~ | ~~`.gitignore` 에 런타임 파일 미등록~~ | 저장소(public) | 해결 (STM-0002): 런타임·build 블록 추가 | (STM-0001, STM-0002) |
 | I-03 | 전역 `dist/` 같은 넓은 무시 패턴이 추가되면 커밋 대상 dist 가 무시됨(ADR-005 위반) | 배포 | 감시: 리뷰 시 `git check-ignore --no-index monitor/frontend/dist/index.html` 가 exit 1 | (STM-0002) |
-| I-02 | `TOO_MANY_STREAMS`(503), loop-cli 결정(exit 64/1, episode 상한, NO_LOOP) 이 ADR-004·ADR-011·20 §5 에 아직 없음 | 문서 정합성 | 열림 → T-009 | (STM-0001) → 일부 해소: TOO_MANY_STREAMS 는 ADR-011 §9·20 §5 반영 (STM-0005), loop-cli 결정은 T-009 |
+| ~~I-02~~ | `TOO_MANY_STREAMS`(503), loop-cli 결정(exit 64/1, episode 상한, NO_LOOP) 이 ADR-004·ADR-011·20 §5 에 아직 없음 | 문서 정합성 | 열림 → T-009 | (STM-0001) → 일부 해소: TOO_MANY_STREAMS 는 ADR-011 §9·20 §5 반영 (STM-0005), loop-cli 결정은 T-009 → **해소** (STM-0015, T-009 문서 정합) |
 | ~~I-04~~ | ADR-011 §4: Host 가드(TrustedHostMiddleware)가 포트를 검사할지 미정. 현재는 포트 무시인데 privacy.md N-02 는 포트 불일치 거부를 요구 | 보안 체크리스트 정합성 (비차단) | 열림: 검사하면 구현 방식을 ADR 에 명시, 안 하면 N-02 포트 케이스를 선택 항목으로 유지 | (STM-0003) → **해소** (STM-0005, ADR-011 §4·§5 / ADR-006) |
 | ~~I-05~~ | ADR-011 §5 에 비-JSON Content-Type 도 403 `FORBIDDEN_ORIGIN` 이라는 한 줄 보강 필요 (D-14) | 문서 정합성 (비차단) | 열림 → [architecture] 후보 | (STM-0003) → **해소** (STM-0005, ADR-011 §4·§5 / ADR-006) |
 | I-06 | 보안 통제가 모두 "요구" 상태(구현 전). 구현 후 P/N/W/T 항목을 실제 실행 근거와 함께 재확인 필요 | 보안 | 열림: backend 구현 후 security 리뷰 | (STM-0003) |
@@ -126,11 +129,11 @@ last_merged_stm: 14
 | I-20 | 출처 가드의 경로 비교 기준(디코드된 `scope["path"]` vs `raw_path`, 끝 슬래시) 미정 → `/api/v1/%65vents` 등으로 우회 가능성 | SSE 가용성 | 열림 → T-011 (가드는 라우터와 같은 디코드 path 로 비교 + 우회 경로 슬롯 카운트 테스트) | (STM-0009) |
 | ~~I-21~~ | Starlette 자동 HEAD·405 가로채기 동작은 이 환경에 FastAPI 가 없어 실행 미확인 | 계약 준수 | 열림 → T-005·T-011 테스트로 고정 | (STM-0009) → **해소** (STM-0010: FastAPI 0.161.1 `APIRoute(GET)` 는 HEAD 미추가 → 405 실측, 순수 Starlette `Route` 는 HEAD 추가 → T-011 은 APIRoute) |
 | I-22 | fastapi 0.161.1 전이 의존성 `opentelemetry-api`(Apache-2.0)·`annotated-doc`(MIT) 가 ADR-006 에 없음, TestClient httpx → httpx2 폐기 예고. 텔레메트리는 SDK·exporter 없고 auto_configure 기본 False 라 외부 전송 없음 | 의존성 기록 | 열림 → T-007(httpx 결정)·T-009(ADR-006 기록) | (STM-0010) → 일부 해소: ADR-006 기록 완료(STM-0012). httpx2 전환은 ops 의 httpx2 로거 억제 후 T-029 |
-| I-23 | ADR 문구가 구현과 다름: ADR-009 "import 부작용 없음"(실제 기본 로더는 .pyc 씀), ADR-011 §4 미들웨어 방식(실제 `__call__`), §9 정적 서빙(실제 router.default), 20 §4 디렉터리 트리·StaticFiles 문구 | 문서 정합성 | 열림 → T-009 | (STM-0010) |
+| ~~I-23~~ | ADR 문구가 구현과 다름: ADR-009 "import 부작용 없음"(실제 기본 로더는 .pyc 씀), ADR-011 §4 미들웨어 방식(실제 `__call__`), §9 정적 서빙(실제 router.default), 20 §4 디렉터리 트리·StaticFiles 문구 | 문서 정합성 | 열림 → T-009 | (STM-0010) → **해소** (STM-0015, T-009 문서 정합) |
 | ~~I-24~~ | 소소한 하드닝: `server: uvicorn` 헤더 노출(`server_header=False`), FastAPI 텔레메트리를 `telemetry=` 로 명시 비활성 + 테스트로 고정(사용자 `OTEL_*` 환경 영향 차단), 가짜 Hook 쓰기 함수 테스트가 `kind=="full"` 에만 error 금지 단언, `asgi_http` receive 의 `sleep(3600)` 무한 대기 | 하드닝·테스트 신뢰성 | 열림 → T-008 | (STM-0010) → **해소** (STM-0014: server_header=False, telemetry 비활성 + 실서버 OTLP 0건 확인, raising-fake 전 kind `calls == []`, asgi_http 짧은 timeout) |
 | ~~I-25~~ | privacy.md §5.2 C-01~C-03·H-01~H-03 POST "통과" 기대값이 대역 핸들러 200 기준 — 실제 `/control/pause` 는 활성 루프 없으면 409 → 기대값을 "400/403/422 아님" 으로 | 테스트 정합성 | 열림 → T-008 | (STM-0010) → **해소** (STM-0014: 실제 control 라우트 기준, 루프 없음 409) |
 | I-26 | backend 에 `source_status()`·`warmup.progress()` 없음 → health 가 stat 판정을 직접 수행(P1 허용). 리더들의 누락·형식 오류 WARN 로그(NFR-002)·시작 시 소스 발견 INFO(20 §6) 미구현 | 관측성 | 열림 → T-010 | (STM-0011) |
-| I-27 | 문서가 health 실제 계약과 다름: 20 §5 health 행, ADR-001 §4(`data.app` 판정), contracts/README 내부 인터페이스 절(`app.state.warmup.progress() -> {state, progress}`) 없음 | 문서 정합성 | 열림 → T-009 (T-010 전 권장) | (STM-0011) |
+| ~~I-27~~ | 문서가 health 실제 계약과 다름: 20 §5 health 행, ADR-001 §4(`data.app` 판정), contracts/README 내부 인터페이스 절(`app.state.warmup.progress() -> {state, progress}`) 없음 | 문서 정합성 | 열림 → T-009 (T-010 전 권장) | (STM-0011) → **해소** (STM-0015, T-009 문서 정합) |
 | I-28 | `redact()` 빈틈(2차 방어): 인코딩 디렉터리명(`-home-user-x`, `C--Users-bob-proj`), 상대 경로, `file:///`, `~bob/`, 공백 포함 Windows 경로 뒷부분. 현재 호출부는 예외 타입만 남겨 실제 노출 없음 | 로그 개인정보 | 열림 → Backlog [ops] | (STM-0011, security 리뷰) |
 | ~~I-29~~ | user/02 §10 DoD "타입 검사 통과" 인데 venv 에 타입 검사기 없음, backend 기존 mypy 오류 2건(`aidlc_reader.py`, `pipeline.py`) | DoD 준수 | 열림 → T-007(mypy dev 의존성)·T-008(오류 수정) | (STM-0011, qa 리뷰) → **해소** (STM-0014: mypy 5건 수정, 게이트 PASS) |
 | ~~I-30~~ | backend mypy 오류는 5건/4파일(aidlc_reader.py:173, pipeline.py:294, security.py:203·204, static_files.py:86) → 로컬 게이트 FAIL | DoD(user/02 §10) | 열림 → T-008 | (STM-0012) → **해소** (STM-0014) |
@@ -140,8 +143,10 @@ last_merged_stm: 14
 | I-34 | JSON 중복 키는 마지막 값 사용 — CLI·대시보드 판정 일치 근거가 stdlib 동작뿐 | 루프 제어 | 수용(L) | (STM-0013, security 재리뷰) |
 | I-35 | `test_sq21_lock_timeout_2s` 경계 없음 — 락 timeout 이 사라지면 스위트가 멈춤 | 테스트 신뢰성 | 열림 → T-011 | (STM-0014, qa 리뷰) |
 | I-36 | FR-005 AC-22(제어 파일 유무가 Hook `pending()`·`summary()` 에 영향 없음) 테스트 없음 | 수용 기준 | 열림 → T-013 | (STM-0014, qa 리뷰) |
-| I-37 | 문서 정합: 20 §5 F3 가 resume 본문 `{"max_pause_sec":..}` 허용처럼 적힘(실제 `{}` 만), ControlView 실제 필드·"loop-status 없음 = ended + empty" 미반영, `aidlc.py` docstring 의 loop-* 줄 | 문서 | 열림 → T-009 | (STM-0014) |
+| ~~I-37~~ | 문서 정합: 20 §5 F3 가 resume 본문 `{"max_pause_sec":..}` 허용처럼 적힘(실제 `{}` 만), ControlView 실제 필드·"loop-status 없음 = ended + empty" 미반영, `aidlc.py` docstring 의 loop-* 줄 | 문서 | 열림 → T-009 | (STM-0014) → **해소** (STM-0015, T-009 문서 정합) — aidlc.py docstring 은 T-010 [backend] |
 | I-38 | 하드닝 권고(비차단): 요청 본문 크기 상한 없음(5 MB 도 메모리로 읽힘), `.control.json` 자리 FIFO 면 open 멈춤, resume `null` 본문 = 생략 취급 | 가용성(L) | Backlog T-030 | (STM-0014, security 리뷰) |
+| I-39 | 런북 pause-not-releasing.md: "세션 없음/pause_timeout" 조치가 "재개 후 /aidlc-run" 으로 틀림(V6·V1 은 재개 버튼 비활성) + running 중 세션 종료 항목 누락 | 운영 문서 | 열림 → T-028 | (STM-0015, ops 리뷰) |
+| I-40 | SKILL 분기표에 Python 실행 실패 exit(127·9009) 행 없음 | 스킬 견고성(L) | Backlog(architecture 판단) | (STM-0015, qa 리뷰) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -153,6 +158,7 @@ last_merged_stm: 14
 ### architecture
 - (아직 없음)
 - ADR 변경은 20 의 에러 코드 목록(§5)·컴포넌트 표 문구까지 같이 고친다. Task 문구의 절 번호는 grep 으로 실제 위치를 확인 (STM-0005)
+- SKILL 흐름은 scratch 사본에서 실제 CLI 로 드라이런해 검증한다(exit 20 은 paused_since 조작 또는 시계 주입) (STM-0015)
 
 ### qa
 - (아직 없음)
