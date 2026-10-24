@@ -46,6 +46,8 @@ opened_at: 2026-10-24T00:09:45+00:00
 
 ## 5. 새로 발견된 Task (Task 후보)
 - [backend] `aidlc/scripts/aidlc.py` 모듈 docstring(인자 없을 때 도움말로 출력)에 한 줄 추가: `aidlc.py loop-start|loop-check|wait-resume|loop-end  루프 제어 CLI (contracts/loop-cli.md, /aidlc-run 전용)` — I-37 (architecture 결정, T-009). 테스트 영향 없음 확인 후 architecture 리뷰
+- [ops] 런북 `workspace/project/ops/runbooks/pause-not-releasing.md` 조치 절 정정: "세션 없음 / pause_timeout: 대시보드에서 재개 후 /aidlc-run" → V6·V1 에서는 재개 버튼이 비활성(FR-005 §2.2, control.py _BUTTONS)이고 loop-start 가 baseline=현재 seq 로 남은 요청을 무시하므로 재개 없이 `/aidlc-run <남은 수>` 만 실행하도록 고친다. SKILL.md 루프 경계(T-009)의 흐름·라벨 표를 출처에 추가 — T-009 ops 리뷰
+- [ops] 같은 런북에 "사이클 진행 중(running) 세션이 닫힘 → 화면은 V3 `실행 중` 그대로(D-11, AC-17), 일시정지를 눌러도 V2 에서 멈춤" 판단·조치(`/aidlc-run <남은 수>` 재실행, loop-start 가 덮어씀) 항목 추가 — T-009 ops 리뷰
 
 ## 6. 결과 & 인수인계
 - 산출물(파일/PR): `.claude/skills/aidlc-run/SKILL.md`, `workspace/project/adr/ADR-004-loop-control.md`, `ADR-009-…`, `ADR-011-…`, `ADR-006-…`, `ADR-001-…`, `workspace/project/20-architecture-analysis.md`, `workspace/project/contracts/README.md` (커밋 안 함)
@@ -56,3 +58,4 @@ opened_at: 2026-10-24T00:09:45+00:00
 <!-- /aidlc-run 이 리뷰 게이트 대상 팀을 리뷰 모드로 호출하면 각 팀이 한 줄씩 추가 -->
 | 팀 | 결과 | 근거 | 필요한 조치 |
 |----|------|------|-------------|
+| ops | PASS | (실행 방식) SKILL 루프 경계: Bash `timeout: 600000`(도구 상한) 안에서 `wait-resume` 기본 540 s(loop_control.py MAX_WAIT_DEFAULT 540, 상한 580) = 60 s 여유, `run_in_background` 금지·exit code 분기표가 CLI 0/10/20/2/1/64 와 일치. (관측) 화면 라벨 6종이 services/control.py LABELS V1~V6·FR-005 §2.1 문자열과 동일, V2→V4 전환은 첫 wait-resume 이 paused 기록할 때(그 사이 V2 유지 = 정상). heartbeat 30 s(HEARTBEAT_SEC) + 540 s 마다 재호출 시 즉시 갱신 → 120 s(HEARTBEAT_STALE_SEC) 규칙에 여유 충분, 재호출 간 공백은 LLM 한 턴. 세션 종료 시 loop-status 는 paused 로 남아 V6 고정 → 다음 /aidlc-run 의 loop-start 가 새 run_id·baseline=현재 seq 로 덮어써 남은 pause 요청 무시(코드 확인). (설정) Python 선택 python3→python→py -3 은 CLAUDE.md 와 일치, run.bat(py -3→python, 3.11 확인)과 순서는 다르나 용도(스킬 Bash vs 더블클릭 cmd)가 달라 충돌 없음. (health 문서) 20 §5 health 행·ADR-001 D2.4·contracts/README §4 가 health.py/models/health.py 와 일치(app Literal 고정, dist, usage_warming 4상태·0~1, statusline 600 s stale, control missing 경고 없음, progress 예외→unknown+예외 종류만 로그). tests/ops 40 passed 실행. (롤백) 문서·스킬만 변경 → git revert 로 원복, SLO 영향 없음 | 비차단: ops 런북 `pause-not-releasing.md` 갱신(§5 [ops] 2건) |
