@@ -1,6 +1,6 @@
 ---
-rev: 15
-last_merged_stm: 15
+rev: 16
+last_merged_stm: 16
 ---
 # Long-term Memory
 
@@ -56,6 +56,9 @@ last_merged_stm: 15
 | D-43 | 제어 API: loop-status 없음 = 상태 `ended`(V1) + `meta.status=empty`; pause 는 활성 루프 없으면 409 `NO_ACTIVE_LOOP`, resume 은 항상 200; resume 본문은 `{}` 만(그 외 422); 대시보드는 디렉터리를 만들지 않음(workspace/memory 없으면 500 CONTROL_WRITE_FAILED). 쓰기는 같은 디렉터리 mkstemp → fsync → os.replace, 심볼릭 링크는 링크만 교체 | FR-005, 원칙 2 | - | (STM-0014) |
 | D-44 | `/aidlc-run` 루프 경계(SKILL.md): 시작 `loop-start N` → 각 사이클 7단계(cascade) 뒤 `loop-check <done>`(마지막 사이클 뒤엔 호출 안 함) → exit 10 이면 `wait-resume` 반복(Bash timeout 600000, 기본 540 s) → 끝에 `loop-end done|blocked|no_task --done n`. exit code 로만 분기(`; echo "exit=$?"`): 0 계속/재개, 10 대기, 20 상한 초과 → loop-end 생략하고 보고(CLI 가 ended·pause_timeout 기록), 2·1 경고 후 계속, 64 → `loop-end blocked --done <i>` 후 중단·버그 보고. 두 파일 쓰기 금지, `run_in_background` 금지, Python 은 python3 → python → py -3 실제 실행 확인 | ADR-004 Decision 3 accepted | - | (STM-0015) |
 | D-45 | 대기 중 세션이 사라지면 화면은 V6 "세션 없음" 고정. 재개를 누를 필요 없이 `/aidlc-run <남은 수>` 만 실행 — 새 loop-start 의 baseline 이 남은 요청을 무효화. 사이클 진행 중 세션이 닫히면 V3 "실행 중" 으로 남는다(D-11) | 운영 절차 | - | (STM-0015, ops 리뷰) |
+| D-46 | 사용량 수집: 폴더 해석 = 인코딩 규칙(대소문자 무시) → 스냅샷 힌트(D-13 패턴 재검증 + `projects/` 직속 하위) → usage 줄 cwd 스캔. `**/*.jsonl` 재귀(30일), 증분 커서(잘림·교체·삭제 시 0부터), `"usage":` 사전 필터 → 허용 필드만 복사, requestId 는 메모리에 해시로만, 전역 last-wins, UTC 시간 버킷(모델×sidechain), lifespan 에서 데우기 스레드 시작(`create_app` 은 파일 I/O 없음, 최근 파일 우선). 패널 상태: 스냅샷 없음 ok+안내, 오래됨/깨짐 partial, 폴더 없음 partial/empty(`PROJECT_DIR_NOT_FOUND`), 깨진 줄은 `skipped_lines` | ADR-002, 30 EDA | - | (STM-0016) |
+| D-47 | **모든 JSONL·스냅샷 열기는 `services/usage/safe_open.open_regular` 하나로**: lstat(일반 파일·비 symlink·nlink==1·expect 일치) → `os.open(O_RDONLY\|O_NOFOLLOW\|O_NONBLOCK)` → fstat(S_ISREG·dev/ino 동일·nlink==1), 거부 시 fd 닫고 None. 하드 링크·FIFO·symlink·경계 밖은 고정 문구 WARN 건수로만 기록 | security 재리뷰 PASS(strace openat 감사) | 스캔 단계 검사만 | (STM-0016) |
+| D-48 | statusLine: `bash "${CLAUDE_PROJECT_DIR:-.}/aidlc/hooks/statusline.sh"`(refreshInterval 30, 프로젝트 `.claude/settings.json` 의 `statusLine` 키만). 스냅샷 9필드(session_hash = sha256 앞 12 hex, transcript_dir_name 한 세그먼트 재검증), 원자적 저장 후 전역 statusLine(`$CLAUDE_CONFIG_DIR` 또는 ~/.claude/settings.json 의 statusLine.command 만 읽음) 같은 stdin 으로 체이닝, 2 s 후 프로세스 그룹 kill, 자기 참조 생략, 항상 exit 0, Python 없으면 빈 줄. 출력 예: `AI-DLC 5h 24% · 7d 41% · $0.12` | ADR-003, Q4 | 전역 설정 수정 | (STM-0016) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -103,6 +106,11 @@ last_merged_stm: 15
 - 단일 작성자 규칙은 모든 CLI 호출·POST 전후 상대 파일 바이트 불변을 래퍼에서 검사, seq 연속성은 응답이 아니라 쓰기 spy 로 검증 (STM-0014)
 - 락·대기를 다루는 테스트는 별도 스레드 + `join(timeout)` 으로 경계를 둔다 — 없으면 회귀가 FAIL 이 아니라 스위트 멈춤으로 나타난다 (STM-0014, qa 변이 검사)
 - Task 지시와 계약이 다르면 계약을 따른다 — T-009 에서 지시의 loop-end reason(completed 등)이 계약에 없어 실제 CLI 로 확인 후 계약값 사용 (STM-0015)
+- 링크·경계 검사는 파일을 여는 **모든** 곳에 같은 함수로 적용한다 — 스캔 시점 검사만으로는 스캔~열기 사이 틈과 다른 열기 경로(폴백)가 남는다. strace openat 감사가 누락을 잡는다 (STM-0016)
+- 체이닝 timeout 은 새 프로세스 그룹 + `killpg` — `subprocess.run` 의 kill 만으로는 손자 프로세스가 남는다. 테스트는 손자를 만드는 복합 명령으로 (STM-0016)
+- 본문 비접근 증명: 허용 목록 밖 키 접근 시 실패하는 trap dict, `json.loads` spy 로 사전 필터 증명 (STM-0016)
+- 다층 방어는 층마다 따로 테스트한다 — 한 층을 지워도 다른 층이 막아 변이가 살아남는다(T-010 변이 24종 중 3건 동치 수용) (STM-0016)
+- 증분 읽기 테스트는 추가 후 정확한 건수 + 실제 seek/읽은 바이트를 단언 — offset 무시 회귀를 잡는다 (STM-0016)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -116,7 +124,7 @@ last_merged_stm: 15
 | I-07 | tasks.md T-002 DoD 경로 `workspace/teams/security/` 가 실제 경로 `workspace/project/security/` 와 불일치 | 문서 정합성 | 열림 → cascade 2/3 에서 정정 | (STM-0003) |
 | ~~I-08~~ | jsonschema(dev) 가 ADR-006 dev 목록에 없음 | 문서 정합성 | 열림 → T-021 | (STM-0004) → **해소** (STM-0005, ADR-011 §4·§5 / ADR-006) |
 | ~~I-09~~ | 홈 격리가 function 범위라 session 범위 fixture·수집 시점 import 는 실제 HOME 을 볼 수 있음, `CLAUDE_CONFIG_DIR` 미처리 | 테스트 신뢰성·개인정보 | 열림 → T-023 (T-005 전) | (STM-0004) → **해소** (STM-0007: 3겹 격리 + audit-hook 가드, 95 passed) |
-| I-10 | 하드 링크는 `resolve()` 경계 검사로 탐지 불가 | 경로 이탈 | 열림 → T-022 (방침 결정) | (STM-0004) |
+| I-10 | 하드 링크는 `resolve()` 경계 검사로 탐지 불가 | 경로 이탈 | 열림 → T-022 (방침 결정) | (STM-0004) → 일부: 수집·폴백·스냅샷 모두 하드 링크 건너뜀(STM-0016), 문서 방침은 T-022 |
 | I-11 | 30일 JSONL 329~658 MB 크기는 선형 추정(pad 9000~18000) | 성능 테스트 정확도 | 열림 → T-013 실측 | (STM-0004) |
 | ~~I-12~~ | `jsonschema-specifications 2025.9.1` 이 02 §9 "최근 1년 내 릴리스" 경계(약 13개월) — dev·전이 전용이라 수용 | 의존성 정책 | 감시 → T-007 고정 시 최신 확인 | (STM-0005) → **해소** (STM-0012: 36개 핀 PyPI 실측, ADR-006 Decision 5 예외 표) |
 | ~~I-13~~ | privacy.md N-02·N-04 가 ADR-011 §4·§5 와 불일치(포트 검사 "선택", TrustedHost 문구), 중복 Host·선행 0·userinfo·Content-Type 접두 함정 케이스 없음 | T-005 리뷰 기준 | 열림 → T-024 (T-005 전) | (STM-0005) → **해소** (STM-0008: privacy.md §5.1 H-01~H-22, §5.2 C-01~C-11) |
@@ -132,7 +140,7 @@ last_merged_stm: 15
 | ~~I-23~~ | ADR 문구가 구현과 다름: ADR-009 "import 부작용 없음"(실제 기본 로더는 .pyc 씀), ADR-011 §4 미들웨어 방식(실제 `__call__`), §9 정적 서빙(실제 router.default), 20 §4 디렉터리 트리·StaticFiles 문구 | 문서 정합성 | 열림 → T-009 | (STM-0010) → **해소** (STM-0015, T-009 문서 정합) |
 | ~~I-24~~ | 소소한 하드닝: `server: uvicorn` 헤더 노출(`server_header=False`), FastAPI 텔레메트리를 `telemetry=` 로 명시 비활성 + 테스트로 고정(사용자 `OTEL_*` 환경 영향 차단), 가짜 Hook 쓰기 함수 테스트가 `kind=="full"` 에만 error 금지 단언, `asgi_http` receive 의 `sleep(3600)` 무한 대기 | 하드닝·테스트 신뢰성 | 열림 → T-008 | (STM-0010) → **해소** (STM-0014: server_header=False, telemetry 비활성 + 실서버 OTLP 0건 확인, raising-fake 전 kind `calls == []`, asgi_http 짧은 timeout) |
 | ~~I-25~~ | privacy.md §5.2 C-01~C-03·H-01~H-03 POST "통과" 기대값이 대역 핸들러 200 기준 — 실제 `/control/pause` 는 활성 루프 없으면 409 → 기대값을 "400/403/422 아님" 으로 | 테스트 정합성 | 열림 → T-008 | (STM-0010) → **해소** (STM-0014: 실제 control 라우트 기준, 루프 없음 409) |
-| I-26 | backend 에 `source_status()`·`warmup.progress()` 없음 → health 가 stat 판정을 직접 수행(P1 허용). 리더들의 누락·형식 오류 WARN 로그(NFR-002)·시작 시 소스 발견 INFO(20 §6) 미구현 | 관측성 | 열림 → T-010 | (STM-0011) |
+| ~~I-26~~ | backend 에 `source_status()`·`warmup.progress()` 없음 → health 가 stat 판정을 직접 수행(P1 허용). 리더들의 누락·형식 오류 WARN 로그(NFR-002)·시작 시 소스 발견 INFO(20 §6) 미구현 | 관측성 | 열림 → T-010 | (STM-0011) → **해소** (STM-0016: warmup.progress 노출, 고정 문구 WARN/INFO, source_status 는 health 유지 결정) |
 | ~~I-27~~ | 문서가 health 실제 계약과 다름: 20 §5 health 행, ADR-001 §4(`data.app` 판정), contracts/README 내부 인터페이스 절(`app.state.warmup.progress() -> {state, progress}`) 없음 | 문서 정합성 | 열림 → T-009 (T-010 전 권장) | (STM-0011) → **해소** (STM-0015, T-009 문서 정합) |
 | I-28 | `redact()` 빈틈(2차 방어): 인코딩 디렉터리명(`-home-user-x`, `C--Users-bob-proj`), 상대 경로, `file:///`, `~bob/`, 공백 포함 Windows 경로 뒷부분. 현재 호출부는 예외 타입만 남겨 실제 노출 없음 | 로그 개인정보 | 열림 → Backlog [ops] | (STM-0011, security 리뷰) |
 | ~~I-29~~ | user/02 §10 DoD "타입 검사 통과" 인데 venv 에 타입 검사기 없음, backend 기존 mypy 오류 2건(`aidlc_reader.py`, `pipeline.py`) | DoD 준수 | 열림 → T-007(mypy dev 의존성)·T-008(오류 수정) | (STM-0011, qa 리뷰) → **해소** (STM-0014: mypy 5건 수정, 게이트 PASS) |
@@ -147,6 +155,9 @@ last_merged_stm: 15
 | I-38 | 하드닝 권고(비차단): 요청 본문 크기 상한 없음(5 MB 도 메모리로 읽힘), `.control.json` 자리 FIFO 면 open 멈춤, resume `null` 본문 = 생략 취급 | 가용성(L) | Backlog T-030 | (STM-0014, security 리뷰) |
 | I-39 | 런북 pause-not-releasing.md: "세션 없음/pause_timeout" 조치가 "재개 후 /aidlc-run" 으로 틀림(V6·V1 은 재개 버튼 비활성) + running 중 세션 종료 항목 누락 | 운영 문서 | 열림 → T-028 | (STM-0015, ops 리뷰) |
 | I-40 | SKILL 분기표에 Python 실행 실패 exit(127·9009) 행 없음 | 스킬 견고성(L) | Backlog(architecture 판단) | (STM-0015, qa 리뷰) |
+| I-41 | 문서 정합: 20 §5 usage 행(summary `tz_offset_min`, 열 지향 timeseries, ControlData `session_activity_*`), contracts/README §4 services 에 usage·I-26 결정, ADR-002 Consequences 에 시간 버킷 근사(반시간 TZ 일 경계 ±30분, 5h 창이 시작 전 최대 1시간 포함), ADR-003 `$CLAUDE_CONFIG_DIR` 지원 | 문서 | Backlog T-031 [architecture] | (STM-0016) |
+| I-42 | 미실측: statusLine 실행 환경의 `CLAUDE_PROJECT_DIR` 제공 여부, VS Code 패널의 statusLine 실행 여부(A5), stdin 키·단위 | FR-004·ADR-003 | 열림 → T-014 UAT | (STM-0016) |
+| I-43 | 로컬 게이트 ruff/mypy 대상에 `aidlc/hooks/statusline.py` 미포함(수동 ruff 만), safe_open 의 lstat~open 사이 FIFO 교체 경합 테스트 없음, 거부된 파일의 커서 항목이 한 주기 남음 | 품질 | Backlog T-029·T-030 | (STM-0016) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -186,6 +197,7 @@ last_merged_stm: 15
 - (아직 없음)
 - API 앱 셸 23 모듈, 테스트 426건(unit 8·api 11 파일), 커버리지 98%. 실행: `cd monitor/backend && ../.venv/bin/python -m pytest --cov=app -q -p no:cacheprovider`, 서버: `AIDLC_MONITOR_PORT=<port> ../.venv/bin/python -m app` (STM-0010)
 - 루프 제어: CLI `aidlc/scripts/loop_control.py` + `app/{services,models,api}/control.py`, 테스트 811건(커버리지 98%), 로컬 게이트 전 단계 PASS (STM-0014)
+- 사용량: `app/services/usage/{collector,resolver,safe_open}.py`, `statusline_reader.py`, `api/usage.py`, `aidlc/hooks/statusline.{sh,py}`. 테스트 1000건(커버리지 97%), 310 MB/30파일 데우기 약 1.2 s(ops 실측) (STM-0016)
 
 ### frontend
 - (아직 없음)
