@@ -23,6 +23,7 @@
 | control | `POST` | [`/api/v1/control/resume`](#post-apiv1controlresume) | 재개 요청 (멱등, 루프가 없어도 200) |
 | usage | `GET` | [`/api/v1/usage/summary`](#get-apiv1usagesummary) | 한도(5h/7d)·세션 비용·오늘/현재 5시간 토큰·캐시 적중률 |
 | usage | `GET` | [`/api/v1/usage/timeseries`](#get-apiv1usagetimeseries) | 토큰 시계열 (기간·버킷·그룹) |
+| events | `GET` | [`/api/v1/events`](#get-apiv1events) | 변경 알림 스트림 (text/event-stream) |
 | health | `GET` | [`/api/v1/health`](#get-apiv1health) | 생존·소스 접근 가능 여부·데우기 진행률·앱 식별자 |
 
 ## pipeline
@@ -829,6 +830,33 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/usage/summary'
 
 ```bash
 curl -X GET 'http://127.0.0.1:8765/api/v1/usage/timeseries'
+```
+
+## events
+
+### GET /api/v1/events
+
+**변경 알림 스트림 (text/event-stream)**
+
+`changed{topics}`·`warming`·`ready` 이벤트와 15초 keep-alive. 형식 기준은 contracts/sse-events.md.
+
+- **인증:** 불필요
+- **operationId:** `get_events`
+
+#### 응답
+
+| 상태 코드 | 설명 | 본문 |
+|---|---|---|
+| `200` | Successful Response | - |
+| `400` | BAD_HOST — Host 가드 | ErrorResponse |
+| `405` | METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함) | ErrorResponse |
+| `500` | INTERNAL_ERROR | ErrorResponse |
+| `503` | TOO_MANY_STREAMS — 동시 연결 상한 8 | - |
+
+#### 예시
+
+```bash
+curl -X GET 'http://127.0.0.1:8765/api/v1/events'
 ```
 
 ## health

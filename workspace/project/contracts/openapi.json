@@ -730,6 +730,54 @@
         }
       }
     },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "변경 알림 스트림 (text/event-stream)",
+        "description": "`changed{topics}`·`warming`·`ready` 이벤트와 15초 keep-alive. 형식 기준은 contracts/sse-events.md.",
+        "operationId": "get_events",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "TOO_MANY_STREAMS — 동시 연결 상한 8"
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [

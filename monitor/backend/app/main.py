@@ -21,6 +21,7 @@ from starlette.types import Receive, Scope, Send
 
 from app import APP_NAME, __version__
 from app.api import control as control_api
+from app.api import events as events_api
 from app.api import memory as memory_api
 from app.api import pipeline as pipeline_api
 from app.api import tasks as tasks_api
@@ -38,6 +39,7 @@ from app.services.statusline_reader import StatuslineReader
 from app.services.tasks import TasksService
 from app.services.usage.collector import UsageCollector
 from app.services.usage.service import UsageService
+from app.services.watcher import Watcher
 from app.static_files import StaticFallback
 
 API_PREFIX = "/api/v1"
@@ -142,12 +144,23 @@ def create_app(
     # contracts/README §4: health 가 `progress() -> {state, progress}` 를 읽는다
     app.state.warmup = collector
 
+    def control_view() -> Any:
+        data = app.state.services.control.read().data
+        return None if data is None else (data.view, data.can_pause, data.can_resume)
+
+    app.state.events = events_api.EventHub(
+        Watcher(root, control_view=control_view, usage_activity=collector.last_activity),
+        refresh=collector.refresh,
+        progress=collector.progress,
+    )
+
     api = APIRouter(prefix=API_PREFIX)
     api.include_router(pipeline_api.router)
     api.include_router(tasks_api.router)
     api.include_router(memory_api.router)
     api.include_router(control_api.router)
     api.include_router(usage_api.router)
+    api.include_router(events_api.router)
     health = _optional_module("app.api.health")
     if health is not None and hasattr(health, "router"):
         api.include_router(health.router)
