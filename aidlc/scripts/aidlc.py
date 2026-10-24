@@ -6,6 +6,10 @@
   aidlc.py teams                   팀 카탈로그 목록 (core / conditional)
   aidlc.py new-team <id...|--core> 카탈로그 기반 팀 charter + 팀 Agent 생성 (카탈로그 밖 id 도 허용)
   aidlc.py status                  Plan/Task/LTM/STM 상태와 미처리 cascade 출력
+  aidlc.py loop-start <N>          /aidlc-run 루프 시작: baseline_seq 기록 (contracts/loop-cli.md)
+  aidlc.py loop-check <done>       사이클 경계 확인: exit 0 계속, 10 일시정지 요청
+  aidlc.py wait-resume [--max-wait <sec>]  일시정지 대기: exit 0 재개, 10 계속 대기, 20 상한 초과
+  aidlc.py loop-end <done|blocked|no_task> [--done <n>]  루프 종료 기록
 """
 from __future__ import annotations
 

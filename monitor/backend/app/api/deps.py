@@ -19,6 +19,7 @@ from app.services.memory import MemoryService
 from app.services.panel import Panel
 from app.services.pipeline import PipelineService
 from app.services.tasks import TasksService
+from app.services.usage.service import UsageService
 
 log = logging.getLogger("aidlc_monitor.api")
 
@@ -52,6 +53,7 @@ class Services:
     gates: GateService
     control: ControlService
     clock: Callable[[], datetime]
+    usage: UsageService
 
 
 def services(request: Request) -> Services:

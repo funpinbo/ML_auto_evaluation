@@ -45,5 +45,10 @@
         ]
       }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/aidlc/hooks/statusline.sh\"",
+    "refreshInterval": 30
   }
 }

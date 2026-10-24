@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -23,6 +24,7 @@ from app.api import control as control_api
 from app.api import memory as memory_api
 from app.api import pipeline as pipeline_api
 from app.api import tasks as tasks_api
+from app.api import usage as usage_api
 from app.api.deps import Services
 from app.config import Settings
 from app.errors import install_error_handlers
@@ -32,7 +34,10 @@ from app.services.control import ControlService
 from app.services.gates import GateService, Runner, subprocess_runner
 from app.services.memory import MemoryService
 from app.services.pipeline import PipelineService
+from app.services.statusline_reader import StatuslineReader
 from app.services.tasks import TasksService
+from app.services.usage.collector import UsageCollector
+from app.services.usage.service import UsageService
 from app.static_files import StaticFallback
 
 API_PREFIX = "/api/v1"
@@ -78,6 +83,19 @@ def _optional_module(name: str) -> Any | None:
         raise
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """서버 시작 시 사용량 데우기 시작(ADR-002 §6), 종료 시 스레드 정리. TestClient 를 `with` 없이 쓰면 돌지 않는다."""
+    warmup = getattr(app.state, "warmup", None)
+    if isinstance(warmup, UsageCollector):
+        warmup.start_warmup()
+    try:
+        yield
+    finally:
+        if isinstance(warmup, UsageCollector):
+            warmup.stop()
+
+
 def create_app(
     settings: Settings,
     *,
@@ -100,26 +118,36 @@ def create_app(
         generate_unique_id_function=lambda route: route.name,
         # I-24: 사용자 OTEL_*·FASTAPI_OTEL_AUTO_CONFIGURE 환경과 무관하게 네이티브 텔레메트리를 끈다.
         telemetry=TELEMETRY_OFF,
+        lifespan=_lifespan,
     )
     install_error_handlers(app)
 
     loader = HookLoader()
     gates = GateService(runner=gate_runner)
     root = settings.aidlc_root
+    snapshot = StatuslineReader(root)
+    # 생성만 한다 — 파일 I/O 는 데우기(lifespan) 또는 첫 사용량 요청에서 (export·health 는 열지 않음)
+    collector = UsageCollector(
+        settings.claude_home, root, hint=snapshot.hint, clock=clock
+    )
     app.state.services = Services(
         pipeline=PipelineService(root, loader, gates),
         tasks=TasksService(root, loader),
         memory=MemoryService(root, loader, clock),
         gates=gates,
-        control=ControlService(root, clock),
+        control=ControlService(root, clock, activity=collector.last_activity),
         clock=clock,
+        usage=UsageService(collector, snapshot, clock),
     )
+    # contracts/README §4: health 가 `progress() -> {state, progress}` 를 읽는다
+    app.state.warmup = collector
 
     api = APIRouter(prefix=API_PREFIX)
     api.include_router(pipeline_api.router)
     api.include_router(tasks_api.router)
     api.include_router(memory_api.router)
     api.include_router(control_api.router)
+    api.include_router(usage_api.router)
     health = _optional_module("app.api.health")
     if health is not None and hasattr(health, "router"):
         api.include_router(health.router)

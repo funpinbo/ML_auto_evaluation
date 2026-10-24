@@ -518,6 +518,218 @@
         }
       }
     },
+    "/api/v1/usage/summary": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "한도(5h/7d)·세션 비용·오늘/현재 5시간 토큰·캐시 적중률",
+        "description": "한도는 status line 스냅샷, 토큰은 이 프로젝트 JSONL. 스냅샷 없음·rate_limits 없음은 토큰만 + 안내.",
+        "operationId": "get_usage_summary",
+        "parameters": [
+          {
+            "name": "tz_offset_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 840,
+              "minimum": -840,
+              "description": "PC 로컬 시간대 오프셋(분, UTC 기준 동쪽 +). 로컬 날짜 경계에 쓴다",
+              "default": 0,
+              "title": "Tz Offset Min"
+            },
+            "description": "PC 로컬 시간대 오프셋(분, UTC 기준 동쪽 +). 로컬 날짜 경계에 쓴다"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_UsageSummaryData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR — 쿼리 검증",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/usage/timeseries": {
+      "get": {
+        "tags": [
+          "usage"
+        ],
+        "summary": "토큰 시계열 (기간·버킷·그룹)",
+        "operationId": "get_usage_timeseries",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "5h",
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "type": "string",
+              "description": "5h | 24h | 7d | 30d",
+              "default": "24h",
+              "title": "Range"
+            },
+            "description": "5h | 24h | 7d | 30d"
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "hour",
+                    "day"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "hour | day (생략 시 30d 는 day, 나머지는 hour)",
+              "title": "Bucket"
+            },
+            "description": "hour | day (생략 시 30d 는 day, 나머지는 hour)"
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "model",
+                "sidechain",
+                "none"
+              ],
+              "type": "string",
+              "description": "model | sidechain | none",
+              "default": "model",
+              "title": "Group"
+            },
+            "description": "model | sidechain | none"
+          },
+          {
+            "name": "tz_offset_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 840,
+              "minimum": -840,
+              "description": "PC 로컬 시간대 오프셋(분, UTC 기준 동쪽 +). 로컬 날짜 경계에 쓴다",
+              "default": 0,
+              "title": "Tz Offset Min"
+            },
+            "description": "PC 로컬 시간대 오프셋(분, UTC 기준 동쪽 +). 로컬 날짜 경계에 쓴다"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_UsageTimeseriesData_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_HOST — Host 가드",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "INTERNAL_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_ERROR — 쿼리 검증",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -809,6 +1021,30 @@
             "title": "Remaining Pause Sec",
             "description": "paused 일 때 max_pause_sec − 경과"
           },
+          "session_activity_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Activity At",
+            "description": "V3 세션 활동 = 이 프로젝트 JSONL 최근 기록 시각 (RFC 3339 UTC). 사용량 데우기 전이면 null"
+          },
+          "session_activity_age_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Activity Age Sec",
+            "description": "session_activity_at 경과 초"
+          },
           "ended_reason": {
             "anyOf": [
               {
@@ -1005,6 +1241,52 @@
           "meta"
         ],
         "title": "Envelope[TasksData]"
+      },
+      "Envelope_UsageSummaryData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageSummaryData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[UsageSummaryData]"
+      },
+      "Envelope_UsageTimeseriesData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageTimeseriesData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[UsageTimeseriesData]"
       },
       "ErrorCode": {
         "type": "string",
@@ -1240,6 +1522,66 @@
         ],
         "title": "HealthSources",
         "description": "데이터 소스별 접근 가능 여부. 파일 내용은 읽지 않고 메타데이터(stat)만 본다."
+      },
+      "LimitWindow": {
+        "properties": {
+          "used_percentage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Percentage",
+            "description": "0~100 (계정 전체 기준)"
+          },
+          "resets_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resets At",
+            "description": "초기화 시각, Unix epoch 초"
+          },
+          "resets_at_iso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resets At Iso",
+            "description": "초기화 시각 (RFC 3339, UTC)"
+          },
+          "reset_passed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reset Passed",
+            "description": "초기화 시각이 지났음 — '새 응답 후 갱신' 안내"
+          }
+        },
+        "type": "object",
+        "required": [
+          "used_percentage",
+          "resets_at",
+          "resets_at_iso",
+          "reset_passed"
+        ],
+        "title": "LimitWindow"
       },
       "MemoryData": {
         "properties": {
@@ -1621,6 +1963,69 @@
         "title": "ResumeRequest",
         "description": "본문 `{}`. 재개는 이전 `max_pause_sec` 를 유지한다."
       },
+      "SnapshotInfo": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing",
+              "broken",
+              "unreadable"
+            ],
+            "title": "State",
+            "description": "스냅샷 파일 판독 결과"
+          },
+          "captured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "age_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Sec",
+            "description": "captured_at 경과 초"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "description": "600 초 초과 (SNAPSHOT_STALE)"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "한도 영역 코드: SOURCE_MISSING / SOURCE_PARSE_ERROR / SOURCE_UNREADABLE / SNAPSHOT_STALE"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "captured_at",
+          "age_sec",
+          "stale",
+          "code"
+        ],
+        "title": "SnapshotInfo"
+      },
       "SourceError": {
         "properties": {
           "code": {
@@ -1890,6 +2295,371 @@
           "items"
         ],
         "title": "TasksData"
+      },
+      "TokenSeries": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "group=model → 모델 id, sidechain → main|subagent, none → all"
+          },
+          "responses": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Responses"
+          },
+          "input_tokens": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Output Tokens"
+          },
+          "cache_creation_input_tokens": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Cache Creation Input Tokens"
+          },
+          "cache_read_input_tokens": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Cache Read Input Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "responses",
+          "input_tokens",
+          "output_tokens",
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens"
+        ],
+        "title": "TokenSeries"
+      },
+      "TokenTotals": {
+        "properties": {
+          "responses": {
+            "type": "integer",
+            "title": "Responses",
+            "description": "고유 응답 수 (requestId 중복 제거 후)"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "cache_creation_input_tokens": {
+            "type": "integer",
+            "title": "Cache Creation Input Tokens"
+          },
+          "cache_read_input_tokens": {
+            "type": "integer",
+            "title": "Cache Read Input Tokens"
+          },
+          "cache_hit_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Hit Rate",
+            "description": "cache_read / (input + cache_creation + cache_read), 분모 0 이면 null"
+          }
+        },
+        "type": "object",
+        "required": [
+          "responses",
+          "input_tokens",
+          "output_tokens",
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "cache_hit_rate"
+        ],
+        "title": "TokenTotals"
+      },
+      "TokenWindow": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "title": "Start",
+            "description": "구간 시작 (RFC 3339)"
+          },
+          "end": {
+            "type": "string",
+            "title": "End",
+            "description": "구간 끝 = 현재 (RFC 3339)"
+          },
+          "estimated": {
+            "type": "boolean",
+            "title": "Estimated",
+            "description": "true = 이동 구간 추정(스냅샷 resets_at 없음). 집계는 1시간 버킷 단위"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/TokenTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "estimated",
+          "totals"
+        ],
+        "title": "TokenWindow"
+      },
+      "UsageSummaryData": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "const": "project",
+            "title": "Scope",
+            "description": "토큰은 이 프로젝트 기준 (A13)"
+          },
+          "limits_available": {
+            "type": "boolean",
+            "title": "Limits Available",
+            "description": "스냅샷에 한도 값이 있음. false 면 limits_notice 를 표시"
+          },
+          "limits_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limits Notice"
+          },
+          "five_hour": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LimitWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seven_day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LimitWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/SnapshotInfo"
+          },
+          "session_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Cost Usd",
+            "description": "세션 비용(추정), 최근 세션"
+          },
+          "session_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Duration Ms"
+          },
+          "context_used_percentage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Used Percentage"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "project_dir_found": {
+            "type": "boolean",
+            "title": "Project Dir Found"
+          },
+          "tokens_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "토큰 영역 코드: PROJECT_DIR_NOT_FOUND"
+          },
+          "today": {
+            "$ref": "#/components/schemas/TokenWindow",
+            "description": "로컬 오늘(tz_offset_min 기준) 토큰"
+          },
+          "five_hour_tokens": {
+            "$ref": "#/components/schemas/TokenWindow",
+            "description": "현재 5시간 구간 = [resets_at − 5h, now] 또는 이동 5시간(estimated)"
+          },
+          "skipped_lines": {
+            "type": "integer",
+            "title": "Skipped Lines",
+            "description": "형식 오류로 건너뛴 기록 줄 수"
+          },
+          "warming": {
+            "$ref": "#/components/schemas/UsageWarming"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "limits_available",
+          "limits_notice",
+          "five_hour",
+          "seven_day",
+          "snapshot",
+          "session_cost_usd",
+          "session_duration_ms",
+          "context_used_percentage",
+          "model_id",
+          "project_dir_found",
+          "tokens_code",
+          "today",
+          "five_hour_tokens",
+          "skipped_lines",
+          "warming"
+        ],
+        "title": "UsageSummaryData"
+      },
+      "UsageTimeseriesData": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "const": "project",
+            "title": "Scope"
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "5h",
+              "24h",
+              "7d",
+              "30d"
+            ],
+            "title": "Range"
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "title": "Bucket"
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "model",
+              "sidechain",
+              "none"
+            ],
+            "title": "Group"
+          },
+          "tz_offset_min": {
+            "type": "integer",
+            "title": "Tz Offset Min"
+          },
+          "start": {
+            "type": "string",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "title": "End"
+          },
+          "buckets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Buckets",
+            "description": "버킷 시작 시각 목록 (hour = UTC 정시, day = 로컬 자정, RFC 3339). series 값과 같은 순서"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/TokenSeries"
+            },
+            "type": "array",
+            "title": "Series"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/TokenTotals"
+          },
+          "project_dir_found": {
+            "type": "boolean",
+            "title": "Project Dir Found"
+          },
+          "warming": {
+            "$ref": "#/components/schemas/UsageWarming"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "range",
+          "bucket",
+          "group",
+          "tz_offset_min",
+          "start",
+          "end",
+          "buckets",
+          "series",
+          "totals",
+          "project_dir_found",
+          "warming"
+        ],
+        "title": "UsageTimeseriesData"
       },
       "UsageWarming": {
         "properties": {

@@ -21,6 +21,8 @@
 | control | `GET` | [`/api/v1/control`](#get-apiv1control) | 루프 제어 화면 상태 (.control.json + loop-status.json 조합) |
 | control | `POST` | [`/api/v1/control/pause`](#post-apiv1controlpause) | 일시정지 요청 (.control.json state=pause, seq = max(prev, baseline)+1) |
 | control | `POST` | [`/api/v1/control/resume`](#post-apiv1controlresume) | 재개 요청 (멱등, 루프가 없어도 200) |
+| usage | `GET` | [`/api/v1/usage/summary`](#get-apiv1usagesummary) | 한도(5h/7d)·세션 비용·오늘/현재 5시간 토큰·캐시 적중률 |
+| usage | `GET` | [`/api/v1/usage/timeseries`](#get-apiv1usagetimeseries) | 토큰 시계열 (기간·버킷·그룹) |
 | health | `GET` | [`/api/v1/health`](#get-apiv1health) | 생존·소스 접근 가능 여부·데우기 진행률·앱 식별자 |
 
 ## pipeline
@@ -389,6 +391,8 @@ loop-status 없음 = `meta.status=empty`, 깨짐 = `error`, 제어 파일 깨짐
     "max_pause_sec": 0,
     "pause_elapsed_sec": 0,
     "remaining_pause_sec": 0,
+    "session_activity_at": "string",
+    "session_activity_age_sec": 0,
     "ended_reason": "done",
     "ended_message": "string"
   },
@@ -479,6 +483,8 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/control'
     "max_pause_sec": 0,
     "pause_elapsed_sec": 0,
     "remaining_pause_sec": 0,
+    "session_activity_at": "string",
+    "session_activity_age_sec": 0,
     "ended_reason": "done",
     "ended_message": "string"
   },
@@ -568,6 +574,8 @@ curl -X POST 'http://127.0.0.1:8765/api/v1/control/pause' \
     "max_pause_sec": 0,
     "pause_elapsed_sec": 0,
     "remaining_pause_sec": 0,
+    "session_activity_at": "string",
+    "session_activity_age_sec": 0,
     "ended_reason": "done",
     "ended_message": "string"
   },
@@ -592,6 +600,235 @@ curl -X POST 'http://127.0.0.1:8765/api/v1/control/pause' \
 curl -X POST 'http://127.0.0.1:8765/api/v1/control/resume' \
   -H 'Content-Type: application/json' \
   -d '{}'
+```
+
+## usage
+
+### GET /api/v1/usage/summary
+
+**한도(5h/7d)·세션 비용·오늘/현재 5시간 토큰·캐시 적중률**
+
+한도는 status line 스냅샷, 토큰은 이 프로젝트 JSONL. 스냅샷 없음·rate_limits 없음은 토큰만 + 안내.
+
+- **인증:** 불필요
+- **operationId:** `get_usage_summary`
+
+#### 파라미터
+
+| 이름 | 위치 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| `tz_offset_min` | query | integer |  | PC 로컬 시간대 오프셋(분, UTC 기준 동쪽 +). 로컬 날짜 경계에 쓴다 |
+
+#### 응답
+
+| 상태 코드 | 설명 | 본문 |
+|---|---|---|
+| `200` | Successful Response | Envelope_UsageSummaryData_ |
+| `400` | BAD_HOST — Host 가드 | ErrorResponse |
+| `405` | METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함) | ErrorResponse |
+| `500` | INTERNAL_ERROR | ErrorResponse |
+| `422` | VALIDATION_ERROR — 쿼리 검증 | ErrorResponse |
+
+`200` 응답 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | UsageSummaryData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
+
+```json
+{
+  "data": {
+    "scope": "string",
+    "limits_available": true,
+    "limits_notice": "string",
+    "five_hour": {
+      "used_percentage": 0.0,
+      "resets_at": 0,
+      "resets_at_iso": "string",
+      "reset_passed": true
+    },
+    "seven_day": {
+      "used_percentage": 0.0,
+      "resets_at": 0,
+      "resets_at_iso": "string",
+      "reset_passed": true
+    },
+    "snapshot": {
+      "state": "ok",
+      "captured_at": "string",
+      "age_sec": 0,
+      "stale": true,
+      "code": "SOURCE_MISSING"
+    },
+    "session_cost_usd": 0.0,
+    "session_duration_ms": 0,
+    "context_used_percentage": 0.0,
+    "model_id": "string",
+    "project_dir_found": true,
+    "tokens_code": "SOURCE_MISSING",
+    "today": {
+      "start": "string",
+      "end": "string",
+      "estimated": true,
+      "totals": {
+        "responses": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_hit_rate": 0.0
+      }
+    },
+    "five_hour_tokens": {
+      "start": "string",
+      "end": "string",
+      "estimated": true,
+      "totals": {
+        "responses": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_hit_rate": 0.0
+      }
+    },
+    "skipped_lines": 0,
+    "warming": {
+      "state": "not_started",
+      "progress": 0.0
+    }
+  },
+  "meta": {
+    "status": "ok",
+    "warnings": [
+      "string"
+    ],
+    "error": {
+      "code": "SOURCE_MISSING",
+      "message": "string"
+    },
+    "generated_at": "string",
+    "source_mtime": "string"
+  }
+}
+```
+
+#### 예시
+
+```bash
+curl -X GET 'http://127.0.0.1:8765/api/v1/usage/summary'
+```
+
+### GET /api/v1/usage/timeseries
+
+**토큰 시계열 (기간·버킷·그룹)**
+
+- **인증:** 불필요
+- **operationId:** `get_usage_timeseries`
+
+#### 파라미터
+
+| 이름 | 위치 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| `range` | query | string enum: `5h`, `24h`, `7d`, `30d` |  | 5h \| 24h \| 7d \| 30d |
+| `bucket` | query | string enum: `hour`, `day` \| null |  | hour \| day (생략 시 30d 는 day, 나머지는 hour) |
+| `group` | query | string enum: `model`, `sidechain`, `none` |  | model \| sidechain \| none |
+| `tz_offset_min` | query | integer |  | PC 로컬 시간대 오프셋(분, UTC 기준 동쪽 +). 로컬 날짜 경계에 쓴다 |
+
+#### 응답
+
+| 상태 코드 | 설명 | 본문 |
+|---|---|---|
+| `200` | Successful Response | Envelope_UsageTimeseriesData_ |
+| `400` | BAD_HOST — Host 가드 | ErrorResponse |
+| `405` | METHOD_NOT_ALLOWED — `Allow` 헤더 포함 (OPTIONS·HEAD 포함) | ErrorResponse |
+| `500` | INTERNAL_ERROR | ErrorResponse |
+| `422` | VALIDATION_ERROR — 쿼리 검증 | ErrorResponse |
+
+`200` 응답 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | UsageTimeseriesData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
+
+```json
+{
+  "data": {
+    "scope": "string",
+    "range": "5h",
+    "bucket": "hour",
+    "group": "model",
+    "tz_offset_min": 0,
+    "start": "string",
+    "end": "string",
+    "buckets": [
+      "string"
+    ],
+    "series": [
+      {
+        "key": "string",
+        "responses": [
+          null
+        ],
+        "input_tokens": [
+          null
+        ],
+        "output_tokens": [
+          null
+        ],
+        "cache_creation_input_tokens": [
+          null
+        ],
+        "cache_read_input_tokens": [
+          null
+        ]
+      }
+    ],
+    "totals": {
+      "responses": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_hit_rate": 0.0
+    },
+    "project_dir_found": true,
+    "warming": {
+      "state": "not_started",
+      "progress": 0.0
+    }
+  },
+  "meta": {
+    "status": "ok",
+    "warnings": [
+      "string"
+    ],
+    "error": {
+      "code": "SOURCE_MISSING",
+      "message": "string"
+    },
+    "generated_at": "string",
+    "source_mtime": "string"
+  }
+}
+```
+
+#### 예시
+
+```bash
+curl -X GET 'http://127.0.0.1:8765/api/v1/usage/timeseries'
 ```
 
 ## health
@@ -693,6 +930,8 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/health'
 | `max_pause_sec` | integer | ✅ |  |
 | `pause_elapsed_sec` | integer \| null | ✅ |  |
 | `remaining_pause_sec` | integer \| null | ✅ | paused 일 때 max_pause_sec − 경과 |
+| `session_activity_at` | string \| null |  | V3 세션 활동 = 이 프로젝트 JSONL 최근 기록 시각 (RFC 3339 UTC). 사용량 데우기 전이면 null |
+| `session_activity_age_sec` | integer \| null |  | session_activity_at 경과 초 |
 | `ended_reason` | string enum: `done`, `blocked`, `no_task`, `pause_timeout` \| null | ✅ |  |
 | `ended_message` | string \| null | ✅ | V1 종료 사유 문구 (FR-005 §2.3) |
 
@@ -768,6 +1007,30 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/health'
 | `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
 | `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
 
+### Envelope_UsageSummaryData_
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | UsageSummaryData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
+
+### Envelope_UsageTimeseriesData_
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data` | UsageTimeseriesData \| null | ✅ |  |
+| `meta` | Meta | ✅ |  |
+| `meta.status` | string enum: `ok`, `partial`, `empty`, `error`, `warming` | ✅ |  |
+| `meta.warnings` | array<string> |  |  |
+| `meta.error` | SourceError \| null |  |  |
+| `meta.generated_at` | string | ✅ | 응답 생성 시각 (RFC 3339, UTC) |
+| `meta.source_mtime` | string \| null |  | 읽은 소스 파일 중 가장 최근 수정 시각 (RFC 3339, UTC) |
+
 ### ErrorCode
 
 타입: string enum: `VALIDATION_ERROR`, `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `BAD_HOST`, `FORBIDDEN_ORIGIN`, `NO_ACTIVE_LOOP`, `TOO_MANY_STREAMS`, `CONTROL_WRITE_FAILED`, `INTERNAL_ERROR`
@@ -829,6 +1092,15 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/health'
 | `claude_projects` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | `<CLAUDE_HOME>/projects` 디렉터리 (사용량 기록 위치) |
 | `statusline` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | status line 스냅샷 파일. 없음 = statusLine 미실행 또는 첫 응답 전 |
 | `control` | string enum: `ok`, `missing`, `stale`, `unreadable` | ✅ | `.control.json`. 없음은 정상(첫 일시정지 전)이라 경고를 만들지 않는다 |
+
+### LimitWindow
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `used_percentage` | number \| null | ✅ | 0~100 (계정 전체 기준) |
+| `resets_at` | integer \| null | ✅ | 초기화 시각, Unix epoch 초 |
+| `resets_at_iso` | string \| null | ✅ | 초기화 시각 (RFC 3339, UTC) |
+| `reset_passed` | boolean \| null | ✅ | 초기화 시각이 지났음 — '새 응답 후 갱신' 안내 |
 
 ### MemoryData
 
@@ -927,6 +1199,16 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/health'
 
 타입: object
 
+### SnapshotInfo
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `state` | string enum: `ok`, `missing`, `broken`, `unreadable` | ✅ | 스냅샷 파일 판독 결과 |
+| `captured_at` | string \| null | ✅ |  |
+| `age_sec` | integer \| null | ✅ | captured_at 경과 초 |
+| `stale` | boolean | ✅ | 600 초 초과 (SNAPSHOT_STALE) |
+| `code` | SourceErrorCode enum: `SOURCE_MISSING`, `SOURCE_PARSE_ERROR`, `SOURCE_UNREADABLE`, `GATE_TIMEOUT`, `PROJECT_DIR_NOT_FOUND`, `SNAPSHOT_STALE` \| null | ✅ | 한도 영역 코드: SOURCE_MISSING / SOURCE_PARSE_ERROR / SOURCE_UNREADABLE / SNAPSHOT_STALE |
+
 ### SourceError
 
 | 필드 | 타입 | 필수 | 설명 |
@@ -994,6 +1276,122 @@ curl -X GET 'http://127.0.0.1:8765/api/v1/health'
 | `items[].checked` | boolean | ✅ |  |
 | `items[].status` | TaskStatus enum: `open`, `done`, `blocked`, `active` | ✅ |  |
 | `items[].well_formed` | boolean | ✅ |  |
+
+### TokenSeries
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `key` | string | ✅ | group=model → 모델 id, sidechain → main\|subagent, none → all |
+| `responses` | array<integer> | ✅ |  |
+| `input_tokens` | array<integer> | ✅ |  |
+| `output_tokens` | array<integer> | ✅ |  |
+| `cache_creation_input_tokens` | array<integer> | ✅ |  |
+| `cache_read_input_tokens` | array<integer> | ✅ |  |
+
+### TokenTotals
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `responses` | integer | ✅ | 고유 응답 수 (requestId 중복 제거 후) |
+| `input_tokens` | integer | ✅ |  |
+| `output_tokens` | integer | ✅ |  |
+| `cache_creation_input_tokens` | integer | ✅ |  |
+| `cache_read_input_tokens` | integer | ✅ |  |
+| `cache_hit_rate` | number \| null | ✅ | cache_read / (input + cache_creation + cache_read), 분모 0 이면 null |
+
+### TokenWindow
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `start` | string | ✅ | 구간 시작 (RFC 3339) |
+| `end` | string | ✅ | 구간 끝 = 현재 (RFC 3339) |
+| `estimated` | boolean | ✅ | true = 이동 구간 추정(스냅샷 resets_at 없음). 집계는 1시간 버킷 단위 |
+| `totals` | TokenTotals | ✅ |  |
+| `totals.responses` | integer | ✅ | 고유 응답 수 (requestId 중복 제거 후) |
+| `totals.input_tokens` | integer | ✅ |  |
+| `totals.output_tokens` | integer | ✅ |  |
+| `totals.cache_creation_input_tokens` | integer | ✅ |  |
+| `totals.cache_read_input_tokens` | integer | ✅ |  |
+| `totals.cache_hit_rate` | number \| null | ✅ | cache_read / (input + cache_creation + cache_read), 분모 0 이면 null |
+
+### UsageSummaryData
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `scope` | string | ✅ | 토큰은 이 프로젝트 기준 (A13) |
+| `limits_available` | boolean | ✅ | 스냅샷에 한도 값이 있음. false 면 limits_notice 를 표시 |
+| `limits_notice` | string \| null | ✅ |  |
+| `five_hour` | LimitWindow \| null | ✅ |  |
+| `seven_day` | LimitWindow \| null | ✅ |  |
+| `snapshot` | SnapshotInfo | ✅ |  |
+| `snapshot.state` | string enum: `ok`, `missing`, `broken`, `unreadable` | ✅ | 스냅샷 파일 판독 결과 |
+| `snapshot.captured_at` | string \| null | ✅ |  |
+| `snapshot.age_sec` | integer \| null | ✅ | captured_at 경과 초 |
+| `snapshot.stale` | boolean | ✅ | 600 초 초과 (SNAPSHOT_STALE) |
+| `snapshot.code` | SourceErrorCode enum: `SOURCE_MISSING`, `SOURCE_PARSE_ERROR`, `SOURCE_UNREADABLE`, `GATE_TIMEOUT`, `PROJECT_DIR_NOT_FOUND`, `SNAPSHOT_STALE` \| null | ✅ | 한도 영역 코드: SOURCE_MISSING / SOURCE_PARSE_ERROR / SOURCE_UNREADABLE / SNAPSHOT_STALE |
+| `session_cost_usd` | number \| null | ✅ | 세션 비용(추정), 최근 세션 |
+| `session_duration_ms` | integer \| null | ✅ |  |
+| `context_used_percentage` | number \| null | ✅ |  |
+| `model_id` | string \| null | ✅ |  |
+| `project_dir_found` | boolean | ✅ |  |
+| `tokens_code` | SourceErrorCode enum: `SOURCE_MISSING`, `SOURCE_PARSE_ERROR`, `SOURCE_UNREADABLE`, `GATE_TIMEOUT`, `PROJECT_DIR_NOT_FOUND`, `SNAPSHOT_STALE` \| null | ✅ | 토큰 영역 코드: PROJECT_DIR_NOT_FOUND |
+| `today` | TokenWindow | ✅ |  |
+| `today.start` | string | ✅ | 구간 시작 (RFC 3339) |
+| `today.end` | string | ✅ | 구간 끝 = 현재 (RFC 3339) |
+| `today.estimated` | boolean | ✅ | true = 이동 구간 추정(스냅샷 resets_at 없음). 집계는 1시간 버킷 단위 |
+| `today.totals` | TokenTotals | ✅ |  |
+| `today.totals.responses` | integer | ✅ | 고유 응답 수 (requestId 중복 제거 후) |
+| `today.totals.input_tokens` | integer | ✅ |  |
+| `today.totals.output_tokens` | integer | ✅ |  |
+| `today.totals.cache_creation_input_tokens` | integer | ✅ |  |
+| `today.totals.cache_read_input_tokens` | integer | ✅ |  |
+| `today.totals.cache_hit_rate` | number \| null | ✅ | cache_read / (input + cache_creation + cache_read), 분모 0 이면 null |
+| `five_hour_tokens` | TokenWindow | ✅ |  |
+| `five_hour_tokens.start` | string | ✅ | 구간 시작 (RFC 3339) |
+| `five_hour_tokens.end` | string | ✅ | 구간 끝 = 현재 (RFC 3339) |
+| `five_hour_tokens.estimated` | boolean | ✅ | true = 이동 구간 추정(스냅샷 resets_at 없음). 집계는 1시간 버킷 단위 |
+| `five_hour_tokens.totals` | TokenTotals | ✅ |  |
+| `five_hour_tokens.totals.responses` | integer | ✅ | 고유 응답 수 (requestId 중복 제거 후) |
+| `five_hour_tokens.totals.input_tokens` | integer | ✅ |  |
+| `five_hour_tokens.totals.output_tokens` | integer | ✅ |  |
+| `five_hour_tokens.totals.cache_creation_input_tokens` | integer | ✅ |  |
+| `five_hour_tokens.totals.cache_read_input_tokens` | integer | ✅ |  |
+| `five_hour_tokens.totals.cache_hit_rate` | number \| null | ✅ | cache_read / (input + cache_creation + cache_read), 분모 0 이면 null |
+| `skipped_lines` | integer | ✅ | 형식 오류로 건너뛴 기록 줄 수 |
+| `warming` | UsageWarming | ✅ | 사용량 캐시 데우기 진행률 (ADR-002 §6). 수집기(T-010) 전에는 `not_started`. |
+| `warming.state` | string enum: `not_started`, `warming`, `done`, `unknown` | ✅ |  |
+| `warming.progress` | number \| null |  | 0.0~1.0, 모르면 null |
+
+### UsageTimeseriesData
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `scope` | string | ✅ |  |
+| `range` | string enum: `5h`, `24h`, `7d`, `30d` | ✅ |  |
+| `bucket` | string enum: `hour`, `day` | ✅ |  |
+| `group` | string enum: `model`, `sidechain`, `none` | ✅ |  |
+| `tz_offset_min` | integer | ✅ |  |
+| `start` | string | ✅ |  |
+| `end` | string | ✅ |  |
+| `buckets` | array<string> | ✅ | 버킷 시작 시각 목록 (hour = UTC 정시, day = 로컬 자정, RFC 3339). series 값과 같은 순서 |
+| `series` | array<TokenSeries> | ✅ |  |
+| `series[].key` | string | ✅ | group=model → 모델 id, sidechain → main\|subagent, none → all |
+| `series[].responses` | array<integer> | ✅ |  |
+| `series[].input_tokens` | array<integer> | ✅ |  |
+| `series[].output_tokens` | array<integer> | ✅ |  |
+| `series[].cache_creation_input_tokens` | array<integer> | ✅ |  |
+| `series[].cache_read_input_tokens` | array<integer> | ✅ |  |
+| `totals` | TokenTotals | ✅ |  |
+| `totals.responses` | integer | ✅ | 고유 응답 수 (requestId 중복 제거 후) |
+| `totals.input_tokens` | integer | ✅ |  |
+| `totals.output_tokens` | integer | ✅ |  |
+| `totals.cache_creation_input_tokens` | integer | ✅ |  |
+| `totals.cache_read_input_tokens` | integer | ✅ |  |
+| `totals.cache_hit_rate` | number \| null | ✅ | cache_read / (input + cache_creation + cache_read), 분모 0 이면 null |
+| `project_dir_found` | boolean | ✅ |  |
+| `warming` | UsageWarming | ✅ | 사용량 캐시 데우기 진행률 (ADR-002 §6). 수집기(T-010) 전에는 `not_started`. |
+| `warming.state` | string enum: `not_started`, `warming`, `done`, `unknown` | ✅ |  |
+| `warming.progress` | number \| null |  | 0.0~1.0, 모르면 null |
 
 ### UsageWarming
 

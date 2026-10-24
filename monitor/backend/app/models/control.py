@@ -66,5 +66,12 @@ class ControlData(BaseModel):
     remaining_pause_sec: int | None = Field(
         description="paused 일 때 max_pause_sec − 경과"
     )
+    session_activity_at: str | None = Field(
+        default=None,
+        description="V3 세션 활동 = 이 프로젝트 JSONL 최근 기록 시각 (RFC 3339 UTC). 사용량 데우기 전이면 null",
+    )
+    session_activity_age_sec: int | None = Field(
+        default=None, description="session_activity_at 경과 초"
+    )
     ended_reason: Literal["done", "blocked", "no_task", "pause_timeout"] | None
     ended_message: str | None = Field(description="V1 종료 사유 문구 (FR-005 §2.3)")

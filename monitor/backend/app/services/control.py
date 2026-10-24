@@ -285,9 +285,11 @@ class ControlService:
         lock_timeout: float = LOCK_TIMEOUT_SEC,
         replace: Callable[[str, str], None] = os.replace,
         sleep: Callable[[float], None] = time.sleep,
+        activity: Callable[[], datetime | None] | None = None,
     ) -> None:
         self.root = root
         self.clock = clock
+        self.activity = activity
         self.lock = threading.Lock()
         self.lock_timeout = lock_timeout
         self.replace = replace
@@ -312,7 +314,7 @@ class ControlService:
         loop = read_loop_status(self.status_path)
         panel.touch(self.control_path, self.status_path)
         now = self.clock()
-        panel.data = build_view(ctl, loop, now)
+        panel.data = build_view(ctl, loop, now, self._activity())
         if loop.status == "broken":
             panel.fail(SourceErrorCode.SOURCE_PARSE_ERROR, MSG_LOOP_BROKEN)
         elif loop.status == "unreadable":
@@ -322,6 +324,15 @@ class ControlService:
         if ctl.status in ("broken", "unreadable"):
             panel.warn(MSG_CONTROL_BROKEN)
         return panel
+
+    def _activity(self) -> datetime | None:
+        """V3 세션 활동(최근 JSONL 기록 시각). 사용량 수집기 오류는 이 값만 None 으로 (패널 격리)."""
+        if self.activity is None:
+            return None
+        try:
+            return self.activity()
+        except Exception:  # noqa: BLE001
+            return None
 
     # -------------------------------------------------------------- 쓰기 (POST /control/pause|resume)
     def pause(self, max_pause_sec: int | None = None) -> Panel:
@@ -400,6 +411,12 @@ class ControlService:
                     pass
 
 
+def _iso(ts: datetime | None) -> str | None:
+    if ts is None:
+        return None
+    return ts.astimezone(UTC).replace(microsecond=0).isoformat()
+
+
 def _age(now: datetime, ts: str | None) -> int | None:
     parsed = parse_ts(ts)
     if parsed is None:
@@ -431,7 +448,12 @@ _BUTTONS: dict[str, tuple[bool, bool]] = {
 }
 
 
-def build_view(ctl: ControlFile, loop: LoopFile, now: datetime) -> ControlData:
+def build_view(
+    ctl: ControlFile,
+    loop: LoopFile,
+    now: datetime,
+    activity_at: datetime | None = None,
+) -> ControlData:
     state = screen_state(ctl, loop, now)
     view = _STATE_TO_VIEW[state]
     can_pause, can_resume = _BUTTONS[view]
@@ -473,6 +495,10 @@ def build_view(ctl: ControlFile, loop: LoopFile, now: datetime) -> ControlData:
         max_pause_sec=limit,
         pause_elapsed_sec=elapsed,
         remaining_pause_sec=max(0, limit - elapsed) if elapsed is not None else None,
+        session_activity_at=_iso(activity_at),
+        session_activity_age_sec=max(0, int((now - activity_at).total_seconds()))
+        if activity_at is not None
+        else None,
         ended_reason=reason,
         ended_message=ended_message(reason, total or 0, remaining or 0, limit)
         if view == "V1"
