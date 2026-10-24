@@ -1,6 +1,6 @@
 ---
-rev: 13
-last_merged_stm: 13
+rev: 14
+last_merged_stm: 14
 ---
 # Long-term Memory
 
@@ -51,6 +51,9 @@ last_merged_stm: 13
 | D-38 | 의존성: httpx==0.28.1 유지(httpx2 전환은 ops 로거 수정 후), pip-audit 은 dev 의존성이 아니라 릴리스 전 일회용 venv 에서 실행, mypy==2.4.0 dev 추가. user/02 §9 는 직접 채택 판단에 적용하고 전이 예외는 ADR-006 Decision 5 표로 기록(경계 밖 7건·라이선스 예외 3건, 전 36 핀 PyPI 실측) — 전이 적용 여부는 사용자 확인 대기(Q-P5) | ADR-006 Decision 2·5 | 즉시 httpx2 | (STM-0012) |
 | D-39 | seq 발급: 대시보드가 쓸 때마다 `next_seq = max(prev, baseline) + 1` (prev = `.control.json` seq, 없음/broken 이면 0; baseline = `loop-status.json` baseline_seq, 없음/위반이면 0). 두 파일은 매번 새로 읽고 캐시하지 않는다. 대시보드는 loop-status 를 읽기만(단일 작성자 유지). CLI 는 변경 없음 — `(seq > baseline_seq, state)` 만 본다. 제어 파일 **삭제는 broken 이 아니라 없음(정상, 대기 유지)**, broken 은 exit 2(계속 진행) | I-16, D-04, FR-005 AC-18 | CLI 가 seq 변경 감지, 시각 기반 id | (STM-0013, ADR-004 Decision 1.1) |
 | D-40 | 엄격 정수: seq·baseline 은 JSON 정수 리터럴만(bool·`7.0`·지수·NaN/Infinity 거부), 범위 0/1~2^53-1, CLI·대시보드가 같은 술어(`type(x) is int` + 범위, parse_int 16자리 초과 거부, parse_constant 예외 → broken, 예외는 밖으로 나가지 않음). 상한 초과 next_seq → 쓰지 않음 + 500 `CONTROL_WRITE_FAILED`(고정 문구), 기존 파일 보존. 쓰기: "두 파일 읽기 → 계산 → os.replace" 를 프로세스 락으로 직렬화, 락 획득 2 s 타임아웃, 락 안 os.replace 재시도 5×50 ms, 임시 파일 finally 삭제 | security 리뷰 FAIL 조치, D-26 | 스키마만 신뢰 | (STM-0013, loop-cli §2.1·§7.1·§7.3) |
+| D-41 | **R-01 완화**: 서브에이전트 Bash 도구(Linux)에서 `wait-resume --max-wait 120/300/540` 이 끊김 없이 exit 10 반환(120.13/300.24/540.37 s), 대기 중 resume 을 0.93 s 만에 감지(exit 0), `paused_since` 는 호출 간 유지. 01 §10 의 같은 세션 대기 설계 유지, 기본 540 s 유지, 후퇴안(대안 B) 불필요. **단서**: 사용자 메인 세션·Windows 미측정 → T-014 UAT 재측정 | ADR-004 R-01 | 대안 B(루프 종료+재입력) | (STM-0014) |
+| D-42 | 엄격 정수 술어는 CLI(stdlib 단독)와 대시보드에 **사본**으로 두고 `test_loop_strict_parity` 교차 테스트로 판정 일치를 강제 — CLI 를 앱과 결합하지 않기 위함(ADR-009, 원칙 2) | 결합 회피 | 공유 import | (STM-0014, architecture 승인) |
+| D-43 | 제어 API: loop-status 없음 = 상태 `ended`(V1) + `meta.status=empty`; pause 는 활성 루프 없으면 409 `NO_ACTIVE_LOOP`, resume 은 항상 200; resume 본문은 `{}` 만(그 외 422); 대시보드는 디렉터리를 만들지 않음(workspace/memory 없으면 500 CONTROL_WRITE_FAILED). 쓰기는 같은 디렉터리 mkstemp → fsync → os.replace, 심볼릭 링크는 링크만 교체 | FR-005, 원칙 2 | - | (STM-0014) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -94,6 +97,9 @@ last_merged_stm: 13
 - user/02 §9 1년 규칙은 전이 포함 모든 핀을 PyPI JSON 해당 버전 최초 `upload_time` 으로 확인한다. ADR 본문과 표의 직접/전이 표기를 일치시킨다 (STM-0012, architecture 재리뷰)
 - 단일 작성자 파일에 단조 카운터가 필요하면, 작성자가 상대 파일(읽기 전용)의 기준값을 하한으로 쓴다 — 작성자 수를 늘리지 않고 파일 손실에서 복구 (STM-0013)
 - JSON Schema `integer` 는 `7.0` 을 허용하고 Python int 파싱은 4300자리 제한이 있다 → 정수 계약은 `type(x) is int` 술어와 상한을 명시하고 읽는 쪽·쓰는 쪽이 공유한다 (STM-0013)
+- 긴 대기·상한 테스트는 `SimClock` 가상 시계(tick 주입)로 — 7200 s·540 s 를 실제로 기다리지 않는다 (STM-0014)
+- 단일 작성자 규칙은 모든 CLI 호출·POST 전후 상대 파일 바이트 불변을 래퍼에서 검사, seq 연속성은 응답이 아니라 쓰기 spy 로 검증 (STM-0014)
+- 락·대기를 다루는 테스트는 별도 스레드 + `join(timeout)` 으로 경계를 둔다 — 없으면 회귀가 FAIL 이 아니라 스위트 멈춤으로 나타난다 (STM-0014, qa 변이 검사)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -121,17 +127,21 @@ last_merged_stm: 13
 | ~~I-21~~ | Starlette 자동 HEAD·405 가로채기 동작은 이 환경에 FastAPI 가 없어 실행 미확인 | 계약 준수 | 열림 → T-005·T-011 테스트로 고정 | (STM-0009) → **해소** (STM-0010: FastAPI 0.161.1 `APIRoute(GET)` 는 HEAD 미추가 → 405 실측, 순수 Starlette `Route` 는 HEAD 추가 → T-011 은 APIRoute) |
 | I-22 | fastapi 0.161.1 전이 의존성 `opentelemetry-api`(Apache-2.0)·`annotated-doc`(MIT) 가 ADR-006 에 없음, TestClient httpx → httpx2 폐기 예고. 텔레메트리는 SDK·exporter 없고 auto_configure 기본 False 라 외부 전송 없음 | 의존성 기록 | 열림 → T-007(httpx 결정)·T-009(ADR-006 기록) | (STM-0010) → 일부 해소: ADR-006 기록 완료(STM-0012). httpx2 전환은 ops 의 httpx2 로거 억제 후 T-029 |
 | I-23 | ADR 문구가 구현과 다름: ADR-009 "import 부작용 없음"(실제 기본 로더는 .pyc 씀), ADR-011 §4 미들웨어 방식(실제 `__call__`), §9 정적 서빙(실제 router.default), 20 §4 디렉터리 트리·StaticFiles 문구 | 문서 정합성 | 열림 → T-009 | (STM-0010) |
-| I-24 | 소소한 하드닝: `server: uvicorn` 헤더 노출(`server_header=False`), FastAPI 텔레메트리를 `telemetry=` 로 명시 비활성 + 테스트로 고정(사용자 `OTEL_*` 환경 영향 차단), 가짜 Hook 쓰기 함수 테스트가 `kind=="full"` 에만 error 금지 단언, `asgi_http` receive 의 `sleep(3600)` 무한 대기 | 하드닝·테스트 신뢰성 | 열림 → T-008 | (STM-0010) |
-| I-25 | privacy.md §5.2 C-01~C-03·H-01~H-03 POST "통과" 기대값이 대역 핸들러 200 기준 — 실제 `/control/pause` 는 활성 루프 없으면 409 → 기대값을 "400/403/422 아님" 으로 | 테스트 정합성 | 열림 → T-008 | (STM-0010) |
+| ~~I-24~~ | 소소한 하드닝: `server: uvicorn` 헤더 노출(`server_header=False`), FastAPI 텔레메트리를 `telemetry=` 로 명시 비활성 + 테스트로 고정(사용자 `OTEL_*` 환경 영향 차단), 가짜 Hook 쓰기 함수 테스트가 `kind=="full"` 에만 error 금지 단언, `asgi_http` receive 의 `sleep(3600)` 무한 대기 | 하드닝·테스트 신뢰성 | 열림 → T-008 | (STM-0010) → **해소** (STM-0014: server_header=False, telemetry 비활성 + 실서버 OTLP 0건 확인, raising-fake 전 kind `calls == []`, asgi_http 짧은 timeout) |
+| ~~I-25~~ | privacy.md §5.2 C-01~C-03·H-01~H-03 POST "통과" 기대값이 대역 핸들러 200 기준 — 실제 `/control/pause` 는 활성 루프 없으면 409 → 기대값을 "400/403/422 아님" 으로 | 테스트 정합성 | 열림 → T-008 | (STM-0010) → **해소** (STM-0014: 실제 control 라우트 기준, 루프 없음 409) |
 | I-26 | backend 에 `source_status()`·`warmup.progress()` 없음 → health 가 stat 판정을 직접 수행(P1 허용). 리더들의 누락·형식 오류 WARN 로그(NFR-002)·시작 시 소스 발견 INFO(20 §6) 미구현 | 관측성 | 열림 → T-010 | (STM-0011) |
 | I-27 | 문서가 health 실제 계약과 다름: 20 §5 health 행, ADR-001 §4(`data.app` 판정), contracts/README 내부 인터페이스 절(`app.state.warmup.progress() -> {state, progress}`) 없음 | 문서 정합성 | 열림 → T-009 (T-010 전 권장) | (STM-0011) |
 | I-28 | `redact()` 빈틈(2차 방어): 인코딩 디렉터리명(`-home-user-x`, `C--Users-bob-proj`), 상대 경로, `file:///`, `~bob/`, 공백 포함 Windows 경로 뒷부분. 현재 호출부는 예외 타입만 남겨 실제 노출 없음 | 로그 개인정보 | 열림 → Backlog [ops] | (STM-0011, security 리뷰) |
-| I-29 | user/02 §10 DoD "타입 검사 통과" 인데 venv 에 타입 검사기 없음, backend 기존 mypy 오류 2건(`aidlc_reader.py`, `pipeline.py`) | DoD 준수 | 열림 → T-007(mypy dev 의존성)·T-008(오류 수정) | (STM-0011, qa 리뷰) |
-| I-30 | backend mypy 오류는 5건/4파일(aidlc_reader.py:173, pipeline.py:294, security.py:203·204, static_files.py:86) → 로컬 게이트 FAIL | DoD(user/02 §10) | 열림 → T-008 | (STM-0012) |
+| ~~I-29~~ | user/02 §10 DoD "타입 검사 통과" 인데 venv 에 타입 검사기 없음, backend 기존 mypy 오류 2건(`aidlc_reader.py`, `pipeline.py`) | DoD 준수 | 열림 → T-007(mypy dev 의존성)·T-008(오류 수정) | (STM-0011, qa 리뷰) → **해소** (STM-0014: mypy 5건 수정, 게이트 PASS) |
+| ~~I-30~~ | backend mypy 오류는 5건/4파일(aidlc_reader.py:173, pipeline.py:294, security.py:203·204, static_files.py:86) → 로컬 게이트 FAIL | DoD(user/02 §10) | 열림 → T-008 | (STM-0012) → **해소** (STM-0014) |
 | I-31 | 런처 테스트가 못 잡는 변이 8/15: `_STOP_CODES` 매핑 제거, `--no-cache-dir` 제거, 자식 env 변수 제거 누락, 런처 BIND_HOST 변경 등 | 회귀 탐지 | 열림 → T-029 | (STM-0012, qa 리뷰) |
 | I-32 | 미검증: run.bat 실기(Windows), cmd 가 현재 폴더의 `py.exe`/`python.exe` 를 먼저 찾는 문제, Node 없이 첫 화면(AC-4)·빈 패널 화면(AC-13)은 dist 이후 | KPI-02·SCOPE-01 | 열림 → T-014(UAT K2-W)·T-013 | (STM-0012) |
 | I-33 | 공급망: `==` 고정이나 해시 미검증(`--require-hashes` 없음), health 응답 위장(같은 사용자 로컬 프로세스) 위험이 threat-model 에 미기재 | 공급망 | 열림 → T-029(P2 전 평가)·T-022(문서) | (STM-0012, security 리뷰) |
 | I-34 | JSON 중복 키는 마지막 값 사용 — CLI·대시보드 판정 일치 근거가 stdlib 동작뿐 | 루프 제어 | 수용(L) | (STM-0013, security 재리뷰) |
+| I-35 | `test_sq21_lock_timeout_2s` 경계 없음 — 락 timeout 이 사라지면 스위트가 멈춤 | 테스트 신뢰성 | 열림 → T-011 | (STM-0014, qa 리뷰) |
+| I-36 | FR-005 AC-22(제어 파일 유무가 Hook `pending()`·`summary()` 에 영향 없음) 테스트 없음 | 수용 기준 | 열림 → T-013 | (STM-0014, qa 리뷰) |
+| I-37 | 문서 정합: 20 §5 F3 가 resume 본문 `{"max_pause_sec":..}` 허용처럼 적힘(실제 `{}` 만), ControlView 실제 필드·"loop-status 없음 = ended + empty" 미반영, `aidlc.py` docstring 의 loop-* 줄 | 문서 | 열림 → T-009 | (STM-0014) |
+| I-38 | 하드닝 권고(비차단): 요청 본문 크기 상한 없음(5 MB 도 메모리로 읽힘), `.control.json` 자리 FIFO 면 open 멈춤, resume `null` 본문 = 생략 취급 | 가용성(L) | Backlog T-030 | (STM-0014, security 리뷰) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -169,6 +179,7 @@ last_merged_stm: 13
 ### backend
 - (아직 없음)
 - API 앱 셸 23 모듈, 테스트 426건(unit 8·api 11 파일), 커버리지 98%. 실행: `cd monitor/backend && ../.venv/bin/python -m pytest --cov=app -q -p no:cacheprovider`, 서버: `AIDLC_MONITOR_PORT=<port> ../.venv/bin/python -m app` (STM-0010)
+- 루프 제어: CLI `aidlc/scripts/loop_control.py` + `app/{services,models,api}/control.py`, 테스트 811건(커버리지 98%), 로컬 게이트 전 단계 PASS (STM-0014)
 
 ### frontend
 - (아직 없음)
