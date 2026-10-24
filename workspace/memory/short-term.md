@@ -2,7 +2,7 @@
 status: active
 task: T-009
 team: architecture
-outcome: none
+outcome: done
 opened_at: 2026-10-24T00:09:45+00:00
 ---
 # Short-term Memory
@@ -23,20 +23,34 @@ opened_at: 2026-10-24T00:09:45+00:00
 
 ## 3. 작업 로그
 <!-- 시간순으로 짧게. 무엇을 했고 무엇을 봤는지 -->
+- [architecture] 대조 기준 읽음: contracts/loop-cli.md, `aidlc/scripts/loop_control.py`(exit 0/10/20/2/64/1, reason = done|blocked|no_task, max-wait 1~580 기본 540), `aidlc.py` loop-* 블록, `app/main.py`(MonitorApp.__call__ 가드 체인, router.default = StaticFallback, redirect_slashes=False, telemetry off), `security.py` wrap_guards 순서, `aidlc_reader._NoBytecodeLoader`(set_data no-op), `api/health.py`·`models/health.py`, `services/control.py`(LABELS V1~V6, ended_message, meta empty/error/partial), `run.py` probe_health/is_our_server, `contracts/openapi.json`(ControlData 24필드, ResumeRequest = 빈 object additionalProperties false, 본문 optional).
+- SKILL.md: 기존 0~7단계 무변경. 머리말 한 줄 + "## 루프 경계" 절 추가(Python 명령 선택, exit code 로만 분기, `.control.json`/`loop-status.json` 쓰기 금지, 흐름 의사코드, 호출×exit code 분기표, 대기 진입 절차 timeout 600000·기본 540, exit 20 후 loop-end 생략, 대시보드 화면 라벨 6종 설명). "반복 & 보고" 에 경계 규칙 언급 추가.
+- 드라이런(scratchpad 사본, 실제 CLI): loop-start 3 → 0, loop-check 1 → 0, 대시보드 흉내 pause seq 1 → loop-check 10, wait-resume --max-wait 2 → 10 ×2, 대기 중 resume seq 2 → 0, loop-check 2 → 0, loop-end done --done 3 → ENDED, 재호출 ALREADY_ENDED 0, `loop-end completed` → 64, ended 후 loop-check → NO_LOOP 0, 제어 파일 broken → loop-start 2·loop-check 2. 스크립트 디렉터리에 `__pycache__` 없음. exit 20(상한 600 s 이상)은 드라이런하지 않음 — backend test_loop_cli 가 시계 주입으로 검증.
+- ADR-004: status accepted, Decision 2.1(D-09 exit 64/1·stdout·exit code 분기), 2.2(D-10 episode·NO_LOOP), 2.3(바이트코드), Decision 3 SKILL 과 일치(python3+Windows, 2·1 계속/64 중단, exit 20 후 loop-end 생략, reason 3종 + --done), Decision 7 R-01 결과(D-41, 메인 세션·Windows → T-014), 대안 B 재표기, Consequences, 변경 이력. D-39·D-40 은 Decision 1.1 에 이미 있어 변경 없음.
+- ADR-009: Context "import 부작용 없음" 정정(기본 로더 .pyc), Decision 1 에 no-bytecode 로더 요구 + 검증 기준, 변경 이력 절 신설.
+- ADR-011: §4 등록 방식 = `MonitorApp.__call__` 가드 체인(FastAPI 내부 미들웨어보다 바깥), §9 정적 서빙 = router.default StaticFallback + redirect_slashes=False, 변경 이력.
+- ADR-006: Decision 1 에 `telemetry=` 전 항목 False 명시(I-24) 근거 추가 — opentelemetry-api·annotated-doc 은 STM-0012 에서 이미 기록됨, 변경 이력.
+- ADR-001: Decision 2.4 중복 실행 판정 상세(200 + 봉투 data.app, 400 BAD_HOST·비 JSON → 다음 포트, 프록시 우회), 변경 이력. (Task 문구의 "§4" 는 실제로 Decision 2.4 — grep 확인)
+- 20: §4 mermaid 앱 셸 라벨, 디렉터리 트리(실제 파일 + `(예정)` 표기), 앱 셸 행(가드 체인·StaticFallback·redirect_slashes), 루프 CLI 행(episode 상한); §5 F3(pause/resume 본문, resume `{}` 만, 409/200/500, D-39), F6(loop-cli 전체 exit code·NO_LOOP), health 행(D-34 실제 계약), control 행(ControlData 실제 필드, loop-status 없음 = ended + empty, D-43); §8 ADR-004 확정; §9 R-01 완화. TOO_MANY_STREAMS·METHOD_NOT_ALLOWED 는 이미 §5·ADR-011 §9 에 있음 확인.
+- contracts/README: §4 프로세스 내부 인터페이스 절 신설(`app.state.warmup.progress() -> {state, progress}`, services, settings, source_status I-26).
+- aidlc.py docstring(I-37): `main()` 이 인자 없을 때 `__doc__` 를 도움말로 출력하는데 loop-* 4줄이 없어 발견 불가 → 한 줄 추가로 결정. aidlc.py 는 수정하지 않고 §5 [backend] 후보로 남김.
+- 검증: `python3 aidlc/scripts/aidlc.py check project` → GATE PASS(exit 0). `monitor/.venv/bin/python -m pytest monitor/backend/tests -q` → 811 passed, 1 warning(기존 StarletteDeprecationWarning). `python3 -m unittest discover -s aidlc/tests` → OK.
 
 ## 4. 발견 사항 (LTM 후보)
-- 결정:
-- 패턴:
-- 이슈/리스크:
-- 교훈:
+- 결정: ADR-004 확정(accepted) — R-01 완화, `--max-wait` 기본 540 유지, 대안 B 는 T-014 재측정 실패 시 후퇴안. 스킬은 exit 20 후 `loop-end` 를 부르지 않고(이미 ended·pause_timeout), exit 64 는 `loop-end blocked --done <i>` 후 중단, 2·1 은 경고 후 계속. loop-end reason 은 `done|blocked|no_task` 3종뿐(그 밖은 64)
+- 결정: I-37 — `aidlc.py` 모듈 docstring 은 도움말로 출력되므로 loop-* 한 줄을 추가한다(구현은 backend 후보)
+- 패턴: 스킬은 Bash 호출 끝에 `; echo "exit=$?"` 를 붙여 exit code 를 명시적으로 읽는다(stdout RESULT 토큰은 보고용)
+- 패턴: ADR 은 구현 방식이 계약 결과와 같으면 "결과가 계약, 방식은 backend" 로 두되, 실제 방식(`MonitorApp.__call__`, `router.default`)을 구현 절에 한 줄로 고정해 문서-코드 불일치를 막는다
+- 이슈/리스크: R-01 메인 세션·Windows 미측정(T-014). exit 20 경로는 실시간 드라이런 안 함(테스트로만 확인)
+- 교훈: Task 문구의 절 번호("ADR-001 §4")와 실제 위치(Decision 2.4)가 다를 수 있다 — grep 으로 확인 후 고친다
 
 ## 5. 새로 발견된 Task (Task 후보)
-- 
+- [backend] `aidlc/scripts/aidlc.py` 모듈 docstring(인자 없을 때 도움말로 출력)에 한 줄 추가: `aidlc.py loop-start|loop-check|wait-resume|loop-end  루프 제어 CLI (contracts/loop-cli.md, /aidlc-run 전용)` — I-37 (architecture 결정, T-009). 테스트 영향 없음 확인 후 architecture 리뷰
 
 ## 6. 결과 & 인수인계
-- 산출물(파일/PR):
-- 검증 결과:
-- 남은 일:
+- 산출물(파일/PR): `.claude/skills/aidlc-run/SKILL.md`, `workspace/project/adr/ADR-004-loop-control.md`, `ADR-009-…`, `ADR-011-…`, `ADR-006-…`, `ADR-001-…`, `workspace/project/20-architecture-analysis.md`, `workspace/project/contracts/README.md` (커밋 안 함)
+- 검증 결과: check project GATE PASS / backend pytest 811 passed / aidlc unittest OK / SKILL 흐름 실제 CLI 드라이런 일치(§3). 코드 변경 없음, openapi.json·reference.md 변경 없음
+- 남은 일: I-02·I-22·I-23·I-27·I-37 문서 쪽 해소(I-37 의 aidlc.py docstring 은 §5 [backend]). R-01 메인 세션·Windows 재측정은 T-014. 리뷰 게이트 대상: qa·ops(20 §4 aidlc-run 스킬 행 리뷰 팀), 필요 시 security(ADR-011 문구)
 
 ## 7. 리뷰 기록 (리뷰 게이트)
 <!-- /aidlc-run 이 리뷰 게이트 대상 팀을 리뷰 모드로 호출하면 각 팀이 한 줄씩 추가 -->

@@ -12,11 +12,12 @@ related: [FR-001, FR-002, FR-003, FR-010, CON-03, A17, 원칙 2, 03 §5, 03 §10
 - FR-003: cascade 1/2/3 미처리 여부를 Hook 과 같은 규칙으로 판정. FR-001: Gate 결과.
 - 30 EDA §3: `aidlc.py status` → `memory_cascade.py status` → `handle("status")` 가 요약 출력 전에 `archive_stm_if_closed()` 를 호출 → STM 이 closed 면 아카이브 생성 + short-term.md 초기화. **읽기 전용이 아니다.** 대시보드가 부르면 원칙 2 위반이고 Hook cascade 순서에 끼어든다.
 - `aidlc.py check` 는 파일을 읽기만 한다(코드 확인). `cmd_status` 와 달리 쓰기 경로 없음.
-- `memory_cascade.py` 의 `read_doc`, `Memory.exists/phases/archived/latest_seq/pending/load_state` 는 읽기만 한다. `Memory.summary()` 도 읽기만 하지만 문자열이라 구조화 데이터가 필요. 쓰기 함수: `write_doc`, `reset_stm`, `archive_stm_if_closed`, `snapshot_stm`, `save_state`, `handle`, `main`. 모듈 import 자체는 부작용 없음.
+- `memory_cascade.py` 의 `read_doc`, `Memory.exists/phases/archived/latest_seq/pending/load_state` 는 읽기만 한다. `Memory.summary()` 도 읽기만 하지만 문자열이라 구조화 데이터가 필요. 쓰기 함수: `write_doc`, `reset_stm`, `archive_stm_if_closed`, `snapshot_stm`, `save_state`, `handle`, `main`. 모듈 최상위 코드는 부작용이 없지만, **importlib 기본 로더(`SourceFileLoader`)는 import 시 `aidlc/hooks/__pycache__/memory_cascade.*.pyc` 를 쓴다**(I-23, STM-0010 실측) — 대시보드가 프레임워크 디렉터리에 파일을 만드는 셈이라 원칙 2·03 §10 위반.
 - 유지보수성(03 §2 순위 3): 판정 규칙이 두 곳에 있으면 어긋난다.
 
 ## Decision
 1. `services/aidlc_reader.py` 가 `importlib.util.spec_from_file_location` 으로 `<AIDLC_ROOT>/aidlc/hooks/memory_cascade.py` 를 로드하고 **허용 목록**만 노출한다: `read_doc`, `as_int`, `FM_RE`, `PHASE_RE`, `CHECKBOX_RE`, `ARCHIVE_RE`, `Memory(root).exists/phases/archived/latest_seq/pending/load_state`. `pending()` 은 `level` 만 쓰고 메시지 문자열은 화면에 내보내지 않는다.
+   - **바이트코드 미기록 로더 필수**: spec 의 loader 는 `.pyc` 를 쓰지 않는 로더(`SourceFileLoader` 하위 클래스에서 `set_data` 를 no-op 으로 둔 `_NoBytecodeLoader`)를 쓴다. 프로세스 전역 `sys.dont_write_bytecode` 를 바꾸는 방식은 다른 import 에 영향을 주므로 쓰지 않는다. 테스트: 조회 API 호출 전후 `aidlc/hooks/` 아래 파일 목록 불변(`__pycache__` 생성 없음). 같은 이유로 `aidlc.py` 의 loop-* 블록도 바이트코드를 쓰지 않는다(ADR-004 Decision 2.3).
 2. 쓰기 함수(`write_doc`, `reset_stm`, `archive_stm_if_closed`, `snapshot_stm`, `save_state`, `handle`, `main`)는 어댑터에서 참조하지 않는다. 테스트가 이 함수들을 예외를 던지는 가짜로 바꾼 상태에서 모든 조회 API 를 호출해 통과해야 한다.
 3. `read_doc` 의 UnicodeDecodeError·OSError 는 어댑터가 잡아 패널 `meta.status = error`(`SOURCE_PARSE_ERROR`/`SOURCE_UNREADABLE`)로 변환(NFR-002).
 4. Task 줄 상세(T-ID, `[팀]`, 제목, FR, deps), `## Blocked` 섹션, STM §3 작업 로그·§7 리뷰 표는 Hook 에 없는 파싱이라 같은 정규식 상수를 재사용해 리더 안에 구현.
@@ -33,3 +34,6 @@ related: [FR-001, FR-002, FR-003, FR-010, CON-03, A17, 원칙 2, 03 §5, 03 §10
 - (+) 대시보드 쓰기 범위가 `.control.json` 하나로 유지.
 - (−) Hook 모듈 API 에 결합 → 프레임워크가 함수 이름을 바꾸면 어댑터 테스트가 실패해 바로 드러남(의도된 결합).
 - (−) `check` 서브프로세스 1회 약 30 ms → TTL 캐시로 상쇄.
+
+## 변경 이력
+- 2026-10-24 T-009 (I-23): Context 의 "모듈 import 자체는 부작용 없음" 을 정정 — 기본 로더가 `__pycache__/*.pyc` 를 쓴다. Decision 1 에 바이트코드 미기록 로더 요구(구현 `services/aidlc_reader.py` `_NoBytecodeLoader`)와 검증 기준 추가. 근거: 원칙 2(대시보드 쓰기는 `.control.json` 하나), 03 §10(대시보드가 AI-DLC 파일을 고치지 않음). 구조 결정 변경 없음(구현에 맞춘 문구·요구 명시).

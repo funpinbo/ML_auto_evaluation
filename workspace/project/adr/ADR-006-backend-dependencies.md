@@ -16,7 +16,7 @@ related: [CON-01, CON-02, 원칙 3, 03 §4, 03 §9, 02 §1, 02 §9, 02 §10, I-2
 
 ## Decision
 1. **런타임 직접 의존성 3개**: `fastapi==0.161.1`, `uvicorn==0.54.0`(extras 없음), `pydantic==2.14.1`. 전이 의존성(starlette, pydantic-core, anyio, h11, click, typing-extensions, annotated-types 등)은 구현 Task 에서 venv 설치 후 `pip freeze` 결과로 `monitor/backend/requirements.txt` 에 전부 `==` 고정.
-   - fastapi 0.161.1 전이 의존성 `opentelemetry-api==1.45.1`(Apache-2.0)·`annotated-doc==0.0.5`(MIT) 도 포함(I-22). opentelemetry-api 는 API 패키지뿐이고 SDK·exporter 가 없으며 자동 구성이 기본 꺼짐 → 외부 전송 없음(NFR-005 영향 없음). 직접 import 하지 않는다.
+   - fastapi 0.161.1 전이 의존성 `opentelemetry-api==1.45.1`(Apache-2.0)·`annotated-doc==0.0.5`(MIT) 도 포함(I-22). opentelemetry-api 는 API 패키지뿐이고 SDK·exporter 가 없으며 자동 구성이 기본 꺼짐 → 외부 전송 없음(NFR-005 영향 없음). 직접 import 하지 않는다. 추가로 앱 팩토리가 FastAPI 네이티브 텔레메트리를 `telemetry={tracing, metrics, logs, operation_spans, auto_configure: False}` 로 명시해 끈다 — 사용자 환경의 `OTEL_*`·`FASTAPI_OTEL_AUTO_CONFIGURE` 와 무관하게 외부 전송 0(I-24, 실서버 OTLP 0건 확인 STM-0014, 테스트로 고정).
    - 전체 런타임 고정 목록(14개)의 정본은 `monitor/backend/requirements.txt`(cicd 소유, T-007 이 PyPI 최신과 일치 확인).
 2. **개발 의존성**은 `requirements-dev.txt` 로 분리(사용자 설치 대상 아님, run.py 는 설치하지 않음): pytest, pytest-cov, httpx(TestClient 필요), ruff, **jsonschema**, **mypy**. pip-audit 는 dev 의존성이 아니다(아래).
    - 전이까지 `==` 고정한 정본은 `monitor/backend/requirements-dev.txt`(cicd 소유, T-007 이 Python 3.13 깨끗한 venv `pip freeze` 로 기록, `pip check` OK).
@@ -62,3 +62,4 @@ related: [CON-01, CON-02, 원칙 3, 03 §4, 03 §9, 02 §1, 02 §9, 02 §10, I-2
 - 2026-10-23 T-021: Decision 2 dev 의존성에 jsonschema 4.26.0(+referencing, jsonschema-specifications, rpds-py, attrs, 모두 MIT) 추가(LTM I-08).
 - 2026-10-23 T-007 architecture 리뷰 조치: Decision 2 에 mypy 2.4.0(+mypy_extensions, librt, ast_serialize, pathspec) 추가(02 §10·I-29), pip-audit 를 dev 의존성에서 빼고 릴리스 전 임시 venv 실행으로 변경, httpx 0.28.1 유지(httpx2 전환은 ops 로거 수정 후, I-22). Decision 1 에 fastapi 전이 opentelemetry-api·annotated-doc 기록(I-22). Decision 5(02 §9 적용 범위·전이 의존성 예외 표) 신설, Consequences 의 "라이선스 MIT/BSD/Apache 만" 정정. 02 §9 의 전이 의존성 적용 여부는 사용자 확인 대기.
 - 2026-10-23 T-007 architecture 재리뷰 조치(문구만): Decision 5 의 '직접 의존성은 모두 기준을 충족' 을 httpx 0.28.1(직접 dev, 2024-12) 예외 반영으로 정정, 예외 표 httpx/httpcore 를 직접/전이 행으로 분리, 1년 경계 밖 누락분 referencing 0.37.0(2025-10-13)·mypy_extensions 1.1.0(2025-04-22) 추가, 36개 핀 전수 판정 방법(PyPI JSON·venv 메타데이터) 기록.
+- 2026-10-24 T-009 (I-22 마무리, 문구만): Decision 1 opentelemetry-api 항목에 앱 팩토리의 텔레메트리 명시 비활성(`telemetry=` 전 항목 False, I-24)을 근거로 추가. 근거: 03 §4 금지(외부 SaaS 로 데이터 전송), NFR-005(외부 호출 0). 의존성 목록·핀 변경 없음.

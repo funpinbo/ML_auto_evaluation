@@ -1,10 +1,10 @@
 ---
 adr: 004
 title: 루프 제어 — 제어 파일 + 사이클 경계 확인 + 같은 세션 대기 CLI
-status: proposed
-date: 2026-10-23
+status: accepted
+date: 2026-10-24
 author: architecture-analyst
-related: [FR-005, FR-003, A7, A8, Q5, Q6, CON-03, 원칙 2, 03 §5, 03 §9, 03 §10]
+related: [FR-005, FR-003, A7, A8, Q5, Q6, CON-03, R-01, R-09, R-10, D-09, D-10, D-39, D-40, D-41, 원칙 2, 원칙 3, 03 §5, 03 §9, 03 §10]
 ---
 # ADR-004. 루프 제어 방식 (03 §9 ADR 필수 대상)
 
@@ -28,12 +28,16 @@ related: [FR-005, FR-003, A7, A8, Q5, Q6, CON-03, 원칙 2, 03 §5, 03 §9, 03 �
    - `loop-start <N>`: 새 `run_id`, `baseline_seq = 현재 .control.json seq`(시작 전에 남아 있던 요청은 무시), state running. exit 0.
    - `loop-check <done>`: `iterations_done`·`heartbeat_at` 갱신. `.control.json` 의 `seq > baseline_seq` 이고 `state == "pause"` 면 exit 10(일시정지), 아니면 exit 0.
    - `wait-resume [--max-wait 540]`: state paused, `paused_since` 는 처음 한 번만 기록(호출을 넘어 누적). 1초마다 제어 파일 확인, 30초마다 heartbeat. `state == "running"` 이고 `seq > baseline_seq`(재개 요청) → state running, exit 0. `--max-wait` 도달 → exit 10(아직 일시정지, 다시 호출). `now − paused_since > max_pause_sec` → state ended(`pause_timeout`), exit 20. 제어 파일 깨짐 → exit 2(경고 출력, 스킬은 계속 진행).
-   - `loop-end <done|blocked|no_task>`: state ended.
+   - `loop-end <done|blocked|no_task> [--done <n>]`: state ended. 이미 ended 면 no-op(첫 `ended_reason`, 예: `pause_timeout` 보존).
+   - **2.1 exit code 계약 (D-09)**: 0 정상/재개, 10 일시정지(loop-check) · 아직 일시정지(wait-resume max-wait 도달), 20 일시정지 상한 초과, 2 제어 파일 broken(계속 진행), **64 사용법 오류**(argparse 기본 2 가 broken 과 겹치므로 64 로 분리), **1 예기치 못한 예외**(stderr 에 예외 종류만, 스킬은 경고 후 계속). 루프를 멈추는 것은 일시정지 요청과 상한 초과뿐이다. stdout 은 `AIDLC-LOOP <sub> <RESULT> k=v ...` 한 줄이며 스킬은 exit code 로만 분기한다(stdout 은 보고용).
+   - **2.2 상한·활성 루프 (D-10)**: 일시정지 상한은 일시정지 1회(episode) 기준 — `paused_since` 는 반복 `wait-resume` 호출을 넘어 유지되고 재개(0)·broken(2) 시 null 로 돌아간다(루프 전체 누적 아님, 00 Q5 해석). 활성 루프가 없으면(`loop-status.json` 없음·깨짐·ended) `loop-check`·`wait-resume`·`loop-end` 는 아무것도 쓰지 않고 exit 0(`NO_LOOP`, stderr 경고).
+   - **2.3 바이트코드**: `aidlc.py` 의 loop-* 등록 블록은 `sys.dont_write_bytecode = True` 후 `loop_control.py` 를 로드한다 — CLI 가 쓰는 파일은 `loop-status.json` 하나뿐이다(R-10).
 3. **`/aidlc-run` 스킬 변경 (architecture 소유)**
-   - 시작: `python aidlc/scripts/aidlc.py loop-start <N>` (Windows: `python3` 대신 `python`/`py` 허용 문구).
+   - 시작: `python3 aidlc/scripts/aidlc.py loop-start <N>` (Windows 에서 `python3` 가 동작하지 않으면 `python` → `py -3`, CLAUDE.md·R-09).
    - 각 사이클 7단계(cascade 처리)가 끝나고 다음 사이클 전에 `loop-check <완료 수>`. 마지막 사이클 뒤에는 확인하지 않는다.
-   - exit 10 이면 사용자에게 "일시정지됨 — 대시보드에서 재개" 한 줄 보고 후 `wait-resume` 을 Bash `timeout: 600000` 으로 호출, exit 10 이면 같은 호출 반복(추가 설명 없이, 토큰 최소화). exit 0 → 남은 반복 진행. exit 20 → 루프 정상 종료 보고(STM 무변경, 남은 반복 수 안내).
-   - 종료(정상·blocked·선택 가능 Task 없음): `loop-end <reason>`.
+   - exit 10 이면 사용자에게 "일시정지됨 — 대시보드에서 재개" 한 줄 보고 후 `wait-resume` 을 Bash `timeout: 600000` 으로 호출(`--max-wait` 기본 540 그대로, D-41), exit 10 이면 같은 호출 반복(추가 설명 없이, 토큰 최소화). exit 0 → 남은 반복 진행. exit 20 → 루프 정상 종료 보고(STM 무변경, 남은 반복 수 안내, `loop-end` 생략). exit 2·1 → 경고 한 줄 후 진행. exit 64 → 스킬 버그로 중단·보고.
+   - 종료: 모든 반복 완료 `loop-end done --done <N>`, blocked `loop-end blocked --done <i>`, 선택 가능 Task 없음 `loop-end no_task --done <i-1>`.
+   - 스킬은 `.control.json`·`loop-status.json` 을 직접 쓰지 않는다. 절차 전문은 `.claude/skills/aidlc-run/SKILL.md` "루프 경계"(T-009).
 4. **대시보드 상태 판정 (`GET /api/v1/control`)**
    | loop-status | control (seq > baseline) | heartbeat | 화면 |
    |---|---|---|---|
@@ -47,9 +51,14 @@ related: [FR-005, FR-003, A7, A8, Q5, Q6, CON-03, 원칙 2, 03 §5, 03 §9, 03 �
 5. **최대 일시정지**: `max_pause_sec` 기본 7200, `POST /control/pause` 본문으로 600~86400 범위 지정 가능(Pydantic 검증).
 6. **Hook 영향 없음 확인 테스트**: `.control.json`/`.monitor/` 존재 여부와 무관하게 `Memory.pending()`·`summary()` 결과가 같음, Stop Hook 상태 파일(`.cascade-state.json`) 불변.
 
+7. **R-01 결과 — 같은 세션 대기 실효성 (D-41, T-008 스파이크, 상태: 완화)**
+   - 측정(서브에이전트 Bash 도구, Linux): `wait-resume --max-wait 120/300/540` 이 도구 타임아웃·끊김 없이 exit 10 으로 돌아왔다(120.13 / 300.24 / 540.37 s). 대기 중 resume 을 0.93 s 만에 감지해 exit 0. `paused_since` 는 호출 간 유지(2.2).
+   - 결정: 01 §10 의 같은 세션 대기 설계(Decision 3)를 **확정**하고 `--max-wait` 기본 540 s 를 유지한다. 후퇴안(대안 B)으로 바꾸지 않는다.
+   - **단서**: 사용자 메인 세션(VS Code/CLI 대화 세션 자체)의 Bash 도구와 Windows 는 아직 측정하지 않았다 → T-014 UAT 에서 재측정한다. 실질 상한이 540 s 보다 낮게 나오면 스킬 인자만 낮춘다(`--max-wait` 값, loop-cli §9 — 계약 변경 아님). 같은 세션 대기 자체가 불가능하면 대안 B 로 바꾸고 이 ADR 을 갱신한다.
+
 ## Alternatives
 - **A. 단일 파일 `.control.json` 에 대시보드 요청과 heartbeat 를 함께 기록**(초기 제안): 파일 수는 적지만 두 작성자가 읽고-고쳐-쓰기를 해서 재개 요청 유실 가능, 그리고 "대시보드가 쓰는 파일 하나"를 CLI 도 쓰게 되어 소유가 섞임. 기각.
-- **B. 일시정지 = 루프 종료, 재개 = 사용자가 `/aidlc-run <남은 수>` 재입력**: 가장 단순하고 토큰 0이지만 01 §10 "같은 세션 자동 재개" 결정과 다름. **스파이크 실패 시 후퇴안**으로 유지(대시보드 상태표의 ended/no_session 경로가 이미 이를 지원).
+- **B. 일시정지 = 루프 종료, 재개 = 사용자가 `/aidlc-run <남은 수>` 재입력**: 가장 단순하고 토큰 0이지만 01 §10 "같은 세션 자동 재개" 결정과 다름. R-01 스파이크(Decision 7)로 현재는 불필요. 메인 세션·Windows 재측정(T-014)이 실패할 때의 **후퇴안**으로 유지(대시보드 상태표의 ended/no_session 경로가 이미 이를 지원).
 - **C. Stop Hook 이 pause 일 때 종료를 막아 대기**: Stop Hook 은 최대 3회 차단 후 허용하는 구조이고 cascade 판정과 섞여 위험(CLAUDE.md cascade 규칙). 기각.
 - **D. Bash `run_in_background` + 알림으로 대기**: 대기 중 세션이 응답을 끝내 Stop Hook 이 돌고 루프 문맥이 끊길 수 있음, 동작 보장 불명. 기각.
 - **E. Hook(memory_cascade.py) 에 제어 로직 추가**: Hook 은 cascade 전용으로 두는 편이 유지보수에 낫다. 기각.
@@ -65,8 +74,10 @@ related: [FR-005, FR-003, A7, A8, Q5, Q6, CON-03, 원칙 2, 03 §5, 03 §9, 03 �
 - (−) 프레임워크 파일(SKILL.md, aidlc.py) 변경 → architecture 리뷰, `docs/aidlc` 는 수정하지 않음(CLAUDE.md).
 - (+) I-16 해결: 제어 파일 삭제·손상 후에도 다음 POST 로 복구(AC-18). 수정은 대시보드 쪽 seq 계산 하나이고 CLI·스키마 구조·`schema_version` 은 그대로(하위 호환).
 - (−) 대시보드 쓰기 경로가 loop-status 읽기에 의존한다(읽기 실패 시 baseline 0 → 그때는 활성 루프도 없음).
+- (+) R-01 완화: 540 s 대기 호출이 서브에이전트 Bash 에서 끊기지 않음을 실측(D-41). 단, 메인 세션·Windows 는 T-014 까지 미확인 위험으로 남는다.
 - 검증: 02 §5 필수 "일시정지/재개 시나리오 테스트"(상태 전이 표 전체, 타임아웃, 깨진 파일, 오래된 요청 무시) + 1주차 실제 `/aidlc-run 3` 리허설(30분·2시간).
 
 ## 변경 이력
 - 2026-10-23 T-026 (I-16): Decision 1.1 seq 발급 규칙 추가 — `next_seq = max(이전 seq(없음/broken 이면 0), loop-status.baseline_seq(없음/깨짐이면 0)) + 1`, 매 쓰기마다 두 파일 재판독 + 프로세스 내 락. Alternatives F(CLI 변경 감지)·G(시각 기반 id) 기각. 근거: 원칙 2(대시보드 쓰기는 `.control.json` 하나 유지), D-04/R-10(파일당 작성자 1명), 03 §9(루프 제어 방식은 ADR 필수). 계약: `contracts/loop-cli.md` §7, `control.schema.json` `seq` 설명. 파일 형식·CLI 동작 변경 없음.
 - 2026-10-23 T-026 (security 리뷰 FAIL 조치): Decision 1.1 에 엄격 정수·상한·쓰기 견고성 추가 — `control.schema.json` `seq`·`loop-status.schema.json` `baseline_seq` 에 `maximum: 9007199254740991`(2^53−1), CLI·대시보드 공통 판정 `type(x) is int` + 범위(bool·`7.0`·지수 표기 거부, 범위 밖 → broken / baseline 0, 4300자리 초과 → broken), `next_seq` 상한 초과 시 미기록 + 500 `CONTROL_WRITE_FAILED`, 락 획득 타임아웃 2 s, 락 안 작업 한정, 실패 시 임시 파일 삭제, 고정 에러 message. SQ-16~SQ-21 추가. 근거: 원칙 2(쓰기 경로 `.control.json` 하나 유지), user/03 §2 가용성("파일이 깨져도 죽지 않을 것")·보안 2순위, 02 §7(응답에 경로 미노출), D-26(에러 코드 닫힌 집합 — 새 코드 없음), R-10(작성자 무변경). 하위 호환: 정상 파일(정수 seq, 2^53−1 이하)은 그대로 유효, `schema` 값·CLI exit code·stdout 무변경. 이전에 통과하던 `7.0`·bool·초대형 seq 는 이제 broken(손상 입력으로만 생기는 값이라 정상 작성자 영향 없음).
+- 2026-10-24 T-009 (확정, status proposed → accepted): Decision 2.1 exit code 계약(64 사용법 오류·1 예기치 못한 예외·stdout 한 줄·exit code 로만 분기, D-09), 2.2 일시정지 상한 episode 기준·`NO_LOOP`(D-10), 2.3 바이트코드 미기록, Decision 3 스킬 규칙을 SKILL.md 구현과 일치(`python3` + Windows `python`/`py -3`, exit 2·1 계속·64 중단, exit 20 후 `loop-end` 생략, `loop-end` reason 3종 + `--done`), Decision 7 R-01 결과(완화 — 서브에이전트 Bash/Linux 540 s 실측, 기본 540 s 유지, 메인 세션·Windows 는 T-014 UAT 재측정, D-41), 대안 B 를 재측정 실패 시 후퇴안으로 재표기. D-39·D-40 은 Decision 1.1 에 이미 반영(변경 없음). 근거: 원칙 2(쓰기 경로 무변경 — 스킬은 어떤 파일도 직접 쓰지 않음), 원칙 3(CLI 표준 라이브러리), 03 §9(루프 제어 방식 ADR 필수), R-10(작성자 무변경). 하위 호환: 파일 형식·exit code·stdout 무변경(문서를 구현·계약에 맞춤).

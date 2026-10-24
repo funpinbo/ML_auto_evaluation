@@ -71,7 +71,7 @@ flowchart LR
   user[사용자 브라우저] -->|HTTP 127.0.0.1 REST/SSE| app
 
   subgraph proc[단일 프로세스: uvicorn + FastAPI]
-    app[API 앱 셸<br/>라우터·에러 포맷·Host/Origin 가드·StaticFiles]
+    app[API 앱 셸<br/>가드 체인(MonitorApp.__call__)·라우터·에러 포맷·dist 기본 처리기]
     aidlc[AI-DLC 상태 리더]
     usage[사용량 수집기<br/>증분 캐시]
     snap[상태 스냅샷 리더]
@@ -102,19 +102,20 @@ flowchart LR
   launcher[run.bat / run.sh → run.py] -->|venv·pip·uvicorn·browser| proc
 ```
 
-디렉터리 배치 (02 §3 준수, 추가분은 굵게):
+디렉터리 배치 (02 §3 준수). `(예정)` = 아직 없는 파일 — 담당 Task 에서 생긴다(2026-10-24 T-009 기준 실제 트리와 대조):
 ```
 run.py  run.bat  run.sh
 monitor/
-  backend/requirements.txt  backend/requirements-dev.txt
-  backend/app/main.py  config.py  logging_config.py
-  backend/app/api/        health, pipeline, plan, tasks, memory, teams, timeline, usage, alerts, control, events
-  backend/app/services/   aidlc_reader, gates, pipeline, tasks, teams, timeline, statusline_reader, control, watcher, usage/(resolver, cursor, privacy_filter, aggregator, warmup)
-  backend/app/models/     Pydantic 응답·요청 모델
+  backend/requirements.txt  requirements-dev.txt  pyproject.toml
+  backend/app/__main__.py  main.py(create_app, MonitorApp)  config.py  security.py(가드 체인)  errors.py  static_files.py(StaticFallback)  logging_config.py
+  backend/app/api/        deps, health, pipeline, tasks(+ /plan), memory, control   (예정: teams, timeline, usage, alerts, events)
+  backend/app/services/   aidlc_reader, gates, panel, pipeline, tasks, memory, control   (예정: teams, timeline, statusline_reader, watcher, usage/(resolver, cursor, privacy_filter, aggregator, warmup))
+  backend/app/models/     Pydantic 응답·요청 모델 (envelope, errors, health, pipeline, tasks, memory, control)
   backend/scripts/export_openapi.py
-  backend/tests/          (fixtures/ 가짜 workspace·JSONL·스냅샷 생성기)
-  frontend/src/           views/, components/panels/, api/, composables/
-  frontend/dist/          (커밋)
+  backend/tests/          api/ unit/ ops/ scenarios/ fixtures/ (가짜 workspace·JSONL·스냅샷 생성기)
+  tools/check_dist_fresh.py                       ← dist 신선도 (ADR-005)
+  frontend/src/           (예정, T-012) views/, components/panels/, api/, composables/
+  frontend/dist/          (예정, T-012 — 커밋)
 aidlc/hooks/statusline.sh  statusline.py         ← status line (ADR-003)
 aidlc/scripts/loop_control.py  (+ aidlc.py 서브커맨드) ← 루프 제어 CLI (ADR-004)
 workspace/memory/.control.json                    ← 대시보드가 쓰는 유일한 파일 (gitignore)
@@ -126,14 +127,14 @@ workspace/project/contracts/openapi.json
 |----------|------|------|----------------|------|
 | 원클릭 런처 (`run.py`, `run.bat`, `run.sh`) | Python 3.11+ 탐지(run.sh 는 `aidlc/hooks/run.sh` 방식으로 python3/python/py 를 실제 실행해 확인, run.bat 는 `py -3` → `python` 순서, Store 별칭 배제), `monitor/.venv` 생성, requirements 해시 마커로 재설치 생략, 포트 선택(기본 8765, 사용 중이면 자기 서버인지 `/api/v1/health` 로 확인 후 브라우저만 열거나 다음 포트), uvicorn 127.0.0.1 기동, 헬스 대기 후 `webbrowser.open` | Python 표준 라이브러리(venv, subprocess, urllib, webbrowser, hashlib), bash, cmd | cicd | requirements.txt, API 앱 셸, ops(헬스) |
 | 의존성 고정 & 빌드 산출물 관리 | `requirements.txt`(런타임, 전이 의존성까지 `==` 고정), `requirements-dev.txt`, `package-lock.json`, dist 재빌드 절차와 dist 신선도 검사 스크립트(소스 해시 ↔ `dist/.build-meta.json`), `.gitignore` 갱신(.venv, node_modules, .control.json, .monitor/), pip-audit/npm audit 절차 | pip, npm, Python 스크립트 | cicd | 프론트 앱, API 앱 셸 |
-| API 앱 셸 (`app/main.py`, `config.py`) | 앱 팩토리, 라우터 등록, 예외 핸들러 → `{"error":{code,message}}`, 422 → `VALIDATION_ERROR` 변환, Host 가드(호스트+포트 정확 일치, 자체 ASGI 미들웨어 — ADR-011 §4) + Origin/Content-Type 가드, dist `StaticFiles(html=True)` 서빙(405 판정을 가로채지 않는 방식 — ADR-011 §9), websocket scope 거부·lifespan 통과(ADR-011 §10), 경로 설정 주입(AIDLC_ROOT, CLAUDE_HOME — 테스트에서 fixture 경로로 교체), OpenAPI export 스크립트 | FastAPI, Starlette 내장 미들웨어, Pydantic | backend (리뷰: architecture, security) | 모든 서비스, ops |
+| API 앱 셸 (`app/main.py`, `config.py`) | 앱 팩토리, 라우터 등록, 예외 핸들러 → `{"error":{code,message}}`, 422 → `VALIDATION_ERROR` 변환, 가드 체인(`MonitorApp.__call__` 이 FastAPI 보다 바깥에서 Host(호스트+포트 정확 일치) → Origin/Content-Type → 보안 헤더 → ErrorShield 순으로 호출 — ADR-011 §4·§12), dist 서빙 = `router.default` 의 `StaticFallback`(`StaticFiles` 미사용, 405 판정을 가로채지 않음, `/api/...` 404, SPA 폴백 없음) + `redirect_slashes=False`(끝 슬래시 404) — ADR-011 §9, websocket scope 거부·lifespan 통과(ADR-011 §10), 경로 설정 주입(AIDLC_ROOT, CLAUDE_HOME — 테스트에서 fixture 경로로 교체), OpenAPI export 스크립트 | FastAPI, 순수 ASGI 가드(표준 라이브러리), Pydantic | backend (리뷰: architecture, security) | 모든 서비스, ops |
 | AI-DLC 상태 리더 (`services/aidlc_reader.py`, `pipeline.py`, `tasks.py`, `gates.py`, `teams.py`) | `memory_cascade.py` 를 importlib 로 읽어 `read_doc`, `Memory.phases/archived/latest_seq/pending/load_state` 만 허용 목록으로 호출(쓰기 함수 호출 금지), 단계 0~6 판정(00 A11), Task 줄 파싱·필터, Gate = `aidlc.py check <layer>` 서브프로세스(`sys.executable`, timeout 10 s, 결과 TTL 5 s), 팀 = `workspace/teams/*/charter.md` + 40 문서, 리뷰 PASS/FAIL 추출(STM §7, archive). 파일별 mtime 캐시, 패널 단위 예외 격리 | Python 표준 라이브러리(re, pathlib, subprocess, importlib) | backend | memory_cascade.py(프레임워크, 읽기), workspace 파일 |
 | 사용량 수집기 (`services/usage/`) | 프로젝트 디렉터리 해석(ADR-002), `**/*.jsonl` 재귀 탐색(30일 mtime), 파일 커서(inode·size·mtime·offset) 증분 읽기, `"usage":` 사전 필터 → 허용 필드 복사 → 원본 폐기, requestId 중복 제거(전역, last-wins), UTC 시간 버킷(시간×모델×sidechain), 서버 시작 시 백그라운드 데우기(최근 파일 우선) + 진행률 | Python 표준 라이브러리(os.scandir, json, datetime, threading/asyncio) | backend (리뷰: security) | `~/.claude/projects/<enc>/` (읽기), 상태 스냅샷(transcript 디렉터리 힌트) |
 | 상태 스냅샷 리더 (`services/statusline_reader.py`) | `claude-status.json` 읽기, 스키마 버전 확인, nullable 필드 처리, `captured_at` 경과 시간 계산(오래됨 판정 10분), 5시간 구간 경계 = `resets_at − 5h` | 표준 라이브러리 | backend | status line 스크립트 |
 | Status line 스크립트 (`aidlc/hooks/statusline.sh`, `statusline.py`) + `.claude/settings.json` `statusLine` 등록 | stdin JSON 에서 허용 필드만 골라 원자적 저장(임시 파일 → `os.replace`), 짧은 한 줄 출력, 사용자 전역 statusLine 명령 체이닝(같은 stdin, timeout 2 s, 자기 자신 재귀 방지), 어떤 오류에도 exit 0 | bash 런처 + Python 표준 라이브러리 | backend (리뷰: security, architecture) | Claude Code statusLine 기능, `~/.claude/settings.json`(statusLine 키만 읽기) |
 | 변경 감지 & SSE 허브 (`services/watcher.py`, `api/events.py`) | 감시 대상 파일·디렉터리 stat 1초 폴링 → topic(pipeline, plan, tasks, memory, teams, timeline, usage, control, alerts) 단위 변경 이벤트, 연결별 asyncio 큐, 15초 keep-alive 주석, 연결 수 상한(8) | asyncio, FastAPI StreamingResponse | backend | 모든 리더 |
 | 루프 제어 서비스·API (`services/control.py`, `api/control.py`) | `.control.json` 원자적 쓰기(유일한 쓰기), `seq` 증가, `loop-status.json` 과 조합한 화면 상태 판정(running / pause_requested / paused / resume_requested / no_session / ended) | 표준 라이브러리, Pydantic | backend (리뷰: security, architecture) | 루프 제어 CLI(파일 계약) |
-| 루프 제어 CLI (`aidlc/scripts/loop_control.py`, `aidlc.py loop-start/loop-check/wait-resume/loop-end`) | 루프 시작 기준 seq 기록, 사이클 경계 확인, 대기(1초 폴링, 최대 540 s/호출, 30 s heartbeat), 누적 일시정지 상한(기본 7200 s), exit code 계약, `loop-status.json` 쓰기 | Python 표준 라이브러리 | backend (리뷰: architecture, qa) | `.control.json`(읽기) |
+| 루프 제어 CLI (`aidlc/scripts/loop_control.py`, `aidlc.py loop-start/loop-check/wait-resume/loop-end`) | 루프 시작 기준 seq 기록, 사이클 경계 확인, 대기(1초 폴링, 최대 540 s/호출, 30 s heartbeat), 일시정지 1회(episode) 상한(기본 7200 s, 반복 호출 간 누적 — D-10), exit code 계약, `loop-status.json` 쓰기 | Python 표준 라이브러리 | backend (리뷰: architecture, qa) | `.control.json`(읽기) |
 | aidlc-run 스킬 변경 (`.claude/skills/aidlc-run/SKILL.md`) | 시작 시 `loop-start N`, 각 사이클 7단계 후 `loop-check`, 일시정지면 `wait-resume` 반복 호출 규칙(Bash timeout 600000), 종료 시 `loop-end`, Windows Python 명령 안내 | Markdown (스킬) | architecture (리뷰: qa, ops) | 루프 제어 CLI |
 | 프론트 앱 셸 & 레이아웃 (`App.vue`, `views/DashboardView.vue`, 테마) | Grafana 스타일 다크 테마, 12열 패널 그리드, 상단 경고 배너 영역, 상단 행 = KPI-01 세 질문(단계·현재 Task·5시간 %) | Vue 3 + TypeScript strict, CSS 변수 | frontend | 패널, API 클라이언트 |
 | 패널 컴포넌트 (`components/panels/*.vue`) | Pipeline/Gate, Plan 진행률 바, Task 표(팀·상태 필터), Memory/cascade, 사용량(5h·7d 게이지, 토큰 시계열 스택 차트, 모델별 표, 비용 stat), 루프 제어 버튼·상태, Timeline(M2), Teams(M2), Alerts(M2). 패널별 empty/error/warming 상태 | Vue 3, ECharts(echarts/core 트리 셰이킹, gauge·line·bar) | frontend | API 클라이언트 |
@@ -151,10 +152,10 @@ workspace/project/contracts/openapi.json
 |------|-------------|-------------------|--------------------------|
 | F1 상태 조회 | 프론트 → API | sync REST | `GET /api/v1/{health, pipeline, plan, tasks, memory, teams, timeline, usage/summary, usage/timeseries, usage/cost, alerts, control}`. 성공 응답 공통 봉투 `{"data": {...}, "meta": {"status": "ok|partial|empty|error|warming", "warnings": [], "error": {"code","message"} 또는 null, "generated_at": ISO, "source_mtime": ISO 또는 null}}`. 소스 문제(파일 없음·깨짐)는 HTTP 200 + `meta.status` 로 패널에만 영향(NFR-002). 요청 오류는 HTTP 4xx/5xx + `{"error":{"code","message"}}` (02 §6) |
 | F2 실시간 변경 알림 | API → 프론트 | async SSE `GET /api/v1/events` | `event: changed` `data: {"topics": ["memory","tasks"], "at": ISO}` / `event: warming` `data: {"progress": 0.0~1.0}` / `event: ready` / 15초마다 `: keep-alive`. 프론트는 topic 해당 패널만 재조회. SSE 실패 시 5초 폴링 |
-| F3 루프 제어 요청 | 프론트 → API → `.control.json` | sync REST | `POST /api/v1/control/pause`, `POST /api/v1/control/resume` (본문 `{}` 또는 `{"max_pause_sec": 600~86400}`, `Content-Type: application/json` 필수). 응답 = `GET /api/v1/control` 과 같은 `ControlView`. 활성 루프 없음 → 409 `NO_ACTIVE_LOOP`, 이미 같은 상태 → 200(멱등) |
+| F3 루프 제어 요청 | 프론트 → API → `.control.json` | sync REST | `POST /api/v1/control/pause` (본문 없음·`{}`·`{"max_pause_sec": 600~86400}` 정수 리터럴), `POST /api/v1/control/resume` (본문 없음 또는 `{}` **만** — 그 밖의 키는 422 `VALIDATION_ERROR`, 재개는 이전 `max_pause_sec` 유지). `Content-Type: application/json` 필수. 응답 = `GET /api/v1/control` 과 같은 봉투 `Envelope[ControlData]`. pause 는 활성 루프(loop-status running/paused) 없으면 409 `NO_ACTIVE_LOOP`, resume 은 항상 200(멱등). 쓰기 실패·락 타임아웃 2 s·seq 상한 → 500 `CONTROL_WRITE_FAILED`(기존 파일 보존). seq = `max(prev, baseline) + 1`(D-39) |
 | F4 제어 파일 계약 | API(쓰기) → 루프 제어 CLI(읽기) | async 파일 | `workspace/memory/.control.json` = `{"schema": 1, "seq": int, "state": "running|pause", "requested_at": ISO, "max_pause_sec": 7200}`. 쓰기 주체 = 대시보드만, 원자적 교체 |
 | F5 루프 상태 계약 | 루프 제어 CLI(쓰기) → API(읽기) | async 파일 | `workspace/memory/.monitor/loop-status.json` = `{"schema": 1, "run_id", "state": "running|paused|ended", "baseline_seq", "iterations_total", "iterations_done", "started_at", "heartbeat_at", "paused_since", "ended_reason": "done|blocked|pause_timeout|no_task|null"}`. 쓰기 주체 = CLI 만 |
-| F6 루프 경계 확인 | aidlc-run 스킬 → CLI | sync (Bash 도구) | `aidlc.py loop-start <N>` → 0 / `loop-check <done>` → 0 계속, 10 일시정지 요청 / `wait-resume` → 0 재개, 10 아직 일시정지(다시 호출), 20 상한 초과(루프 종료), 2 제어 파일 오류(계속 진행 + 경고) / `loop-end <reason>` → 0 |
+| F6 루프 경계 확인 | aidlc-run 스킬 → CLI | sync (Bash 도구) | `contracts/loop-cli.md`. `aidlc.py loop-start <N>` → 0 / `loop-check <done>` → 0 계속, 10 일시정지 요청 / `wait-resume [--max-wait 540]` → 0 재개, 10 아직 일시정지(다시 호출), 20 상한 초과(루프 종료, episode 기준) / `loop-end <done\|blocked\|no_task> [--done n]` → 0. 공통: 2 제어 파일 broken(경고 후 계속), 64 사용법 오류(스킬 버그), 1 예기치 못한 예외(경고 후 계속), 활성 루프 없음 = exit 0 `NO_LOOP`(D-09·D-10). 스킬은 exit code 로만 분기(`.claude/skills/aidlc-run/SKILL.md` "루프 경계") |
 | F7 status line 스냅샷 | Claude Code → statusline 스크립트 → 스냅샷 파일 → 스냅샷 리더 | async (Claude Code 이벤트 + `refreshInterval: 30`) | `claude-status.json` = `{"schema": 1, "captured_at": ISO, "claude_version", "model_id", "session_hash": sha256(session_id)[:12], "transcript_dir_name", "rate_limits": {"five_hour": {"used_percentage", "resets_at"}, "seven_day": {...}} 또는 null, "cost": {"total_cost_usd", "total_duration_ms"}, "context_window": {"used_percentage", "context_window_size"}}`. 단위: 퍼센트 0~100, resets_at = epoch 초(공식 문서 확인) |
 | F8 사용량 수집 | JSONL → 사용량 수집기 | async 증분(1초 stat, 백그라운드) | 허용 필드: `timestamp`, `requestId`, `message.model`, `message.usage.{input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens}`, `isSidechain`, (디렉터리 해석 폴백 때만) `cwd`. 그 밖의 키는 접근하지 않음 |
 | F9 AI-DLC 상태 읽기 | workspace 파일 → AI-DLC 상태 리더 | sync (요청 시, mtime 캐시) | Hook 의 `read_doc`/`Memory.*` 읽기 함수, `aidlc.py check <layer>` 출력 정규식(`(OK|TODO)\s+(\S+)\s+\((\d+)개 미작성\)`, `MISSING\s+(\S+)`, `GATE (PASS|FAIL) — .*미작성 (\d+)개, 누락 문서 (\d+)개`) |
@@ -163,14 +164,14 @@ workspace/project/contracts/openapi.json
 **엔드포인트 목록 (M1 = 굵게)**
 | 메서드 | 경로 | FR | 비고 |
 |--------|------|----|------|
-| GET | **`/api/v1/health`** | CON-05 | `{status, app: "aidlc-monitor", version, sources: {workspace, claude_projects, statusline, control}, usage_warming}` |
+| GET | **`/api/v1/health`** | CON-05 | 봉투 `data = {status: "ok", app: "aidlc-monitor"(고정), version, sources: {workspace, claude_projects, statusline, control: ok\|missing\|stale\|unreadable}, dist: ok\|missing, usage_warming: {state: not_started\|warming\|done\|unknown, progress: 0.0~1.0\|null}}` (D-34). statusline 10분 초과 = stale, `.control.json` 없음은 정상(경고 없음). 소스 판정은 `os.stat`/`os.access` 만. 진행률은 `app.state.warmup.progress()`(T-010, contracts/README §4). 런처 중복 실행 판정 = 200 + `data.app`(ADR-001) |
 | GET | **`/api/v1/pipeline`** | FR-001 | 단계 0~6 상태 + Gate 3종(PASS/FAIL, 미작성 수, 누락 수, 확인 시각) |
 | GET | **`/api/v1/plan`** | FR-002 | current_phase, completed_phases, Phase 별 total/checked/진행률 |
 | GET | **`/api/v1/tasks`** | FR-002 | 쿼리 `team`, `status=open|done|blocked|active`, `phase` (Pydantic 검증, enum) |
 | GET | **`/api/v1/memory`** | FR-003 | STM(status, task, team, opened_at, 경과 초), LTM rev, last_merged_stm, synced_ltm_rev, 미처리 cascade level, Stop 차단 횟수 |
 | GET | **`/api/v1/usage/summary`** | FR-004 | 한도(5h/7d %, resets_at, 스냅샷 경과), 세션 비용, 오늘·현재 5시간 구간 토큰 4종, 캐시 적중률, `limits_available` |
 | GET | **`/api/v1/usage/timeseries`** | FR-004 | 쿼리 `range=5h|24h|7d|30d`, `bucket=hour|day`, `group=model|sidechain|none`, `tz_offset_min`(로컬 날짜 경계) |
-| GET | **`/api/v1/control`** | FR-005 | `ControlView{state, requested_at, paused_since, heartbeat_at, heartbeat_age_sec, iterations_done, iterations_total, max_pause_sec, remaining_pause_sec}` |
+| GET | **`/api/v1/control`** | FR-005 | 봉투 `data = ControlData{state: running\|pause_requested\|paused\|resume_requested\|no_session\|ended, view: V1~V6, label, hint, can_pause, can_resume, requested_state, requested_at, control_seq, baseline_seq, control_file, loop_file: ok\|missing\|broken\|unreadable, loop_state, paused_since, heartbeat_at, heartbeat_age_sec, iterations_done, iterations_total, remaining_iterations, max_pause_sec, pause_elapsed_sec, remaining_pause_sec, ended_reason, ended_message}` (필드 기준 = `contracts/openapi.json`). loop-status **없음 = `state: ended`(V1) + `meta.status=empty`**, 깨짐 = `error`, 제어 파일 깨짐 = `partial`(D-43) |
 | POST | **`/api/v1/control/pause`** | FR-005 | 유일한 쓰기(+resume) |
 | POST | **`/api/v1/control/resume`** | FR-005 | |
 | GET | **`/api/v1/events`** | FR-008 | SSE (M1 은 memory·control·usage·tasks topic, M2 전 topic). GET 만 허용(HEAD 등 405 `Allow: GET`), 출처 검사는 이 경로의 모든 메서드에 405 보다 먼저(ADR-011 §11) |
@@ -229,7 +230,7 @@ workspace/project/contracts/openapi.json
 | ADR-001 | 단일 FastAPI 프로세스 모놀리스 + 원클릭 런처(run.py) | 제안 | `workspace/project/adr/ADR-001-single-process-monolith-and-launcher.md` |
 | ADR-002 | 사용량 데이터 수집: JSONL 증분 파싱 + 허용 필드 복사 + 프로세스 메모리 캐시 (03 §9 필수) | 제안 | `workspace/project/adr/ADR-002-usage-data-collection.md` |
 | ADR-003 | 한도·비용 수집: 프로젝트 statusLine 스냅샷 + 사용자 전역 statusLine 체이닝 (03 §9 필수) | 제안 | `workspace/project/adr/ADR-003-statusline-snapshot.md` |
-| ADR-004 | 루프 제어: 제어 파일 + 사이클 경계 확인 + 같은 세션 대기 CLI (03 §9 필수) | 제안 | `workspace/project/adr/ADR-004-loop-control.md` |
+| ADR-004 | 루프 제어: 제어 파일 + 사이클 경계 확인 + 같은 세션 대기 CLI (03 §9 필수) | 확정 (T-009, R-01 완화) | `workspace/project/adr/ADR-004-loop-control.md` |
 | ADR-005 | 프론트 배포: 빌드된 dist 를 저장소에 커밋 (03 §9 필수) | 제안 | `workspace/project/adr/ADR-005-frontend-dist-committed.md` |
 | ADR-006 | 백엔드 외부 의존성: FastAPI·uvicorn(기본)·Pydantic 만 (03 §9 필수) | 제안 | `workspace/project/adr/ADR-006-backend-dependencies.md` |
 | ADR-007 | 프론트 외부 의존성: Vue 3·ECharts 런타임 + Vite·TS 개발 도구 (03 §9 필수) | 제안 | `workspace/project/adr/ADR-007-frontend-dependencies.md` |
@@ -241,7 +242,7 @@ workspace/project/contracts/openapi.json
 ## 9. 아키텍처 리스크 & 기술 부채 예상
 | ID | 리스크 | 확률 | 영향 | 대응 |
 |----|--------|------|------|------|
-| R-01 | 같은 세션 대기(`wait-resume` 반복 호출)가 실제로 동작하지 않거나, Bash 도구에 문서와 다른 낮은 실질 상한(보고된 약 48~73 s)이 있음 | M | H | 1주차 초반 스파이크(30분·2시간 리허설, 호출당 토큰 측정). `--max-wait` 를 설정값으로 두어 상한이 낮으면 50 s 로 낮춤(토큰 증가 감수). 실패 시 후퇴안: 루프 정상 종료 + 재개 시 "다시 `/aidlc-run <남은 수>`" 안내(ADR-004 대안 B) |
+| R-01 | 같은 세션 대기(`wait-resume` 반복 호출)가 실제로 동작하지 않거나, Bash 도구에 문서와 다른 낮은 실질 상한(보고된 약 48~73 s)이 있음 | M | H | 1주차 초반 스파이크(30분·2시간 리허설, 호출당 토큰 측정). `--max-wait` 를 설정값으로 두어 상한이 낮으면 50 s 로 낮춤(토큰 증가 감수). 실패 시 후퇴안: 루프 정상 종료 + 재개 시 "다시 `/aidlc-run <남은 수>`" 안내(ADR-004 대안 B) **상태: 완화(D-41)** — 서브에이전트 Bash(Linux)에서 120/300/540 s 대기 끊김 없음, resume 0.93 s 감지 → 540 s 유지, 대안 B 불필요. 메인 세션·Windows 는 T-014 UAT 재측정(ADR-004 Decision 7) |
 | R-02 | VS Code 확장 채팅 패널에서 statusLine 이 실행되지 않음 | M | M | FR-004 폴백(토큰만 + 안내 + 스냅샷 경과 시간). 1주차 실측 Task. 미지원이면 "CLI 세션에서 한도 표시" 안내(00 Q13) |
 | R-03 | Claude Code JSONL·statusLine 스키마가 비공식이라 바뀜 | M | M | 파서는 필드 누락에 관대(WARN 건수), 스냅샷 `schema` 버전, 중복 usage 가 달라지면 last-wins 보정(30 §6). 형식 변경 감지 시 health 에 표시 |
 | R-04 | 프로젝트 디렉터리 인코딩 규칙(영숫자 외 문자 → `-`)이 Windows 경로(`C:\x\y` → `C--x-y`)·비 ASCII 경로에서 다름 | M | M | 해석 3단계(ADR-002): 규칙 인코딩 → 스냅샷 `transcript_dir_name` → `projects/*` 중 usage 줄의 `cwd` 가 저장소 경로와 같은 디렉터리 탐색. Linux 는 실측 확인(`/home/user/chatbot` → `-home-user-chatbot`), Windows·macOS 는 리허설에서 확인 |

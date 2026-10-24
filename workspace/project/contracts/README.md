@@ -1,7 +1,7 @@
 ---
 doc: contracts-index
 owner: architecture
-sources: [20 §5, ADR-003, ADR-004, ADR-010, ADR-011]
+sources: [20 §5, ADR-001, ADR-003, ADR-004, ADR-010, ADR-011, D-34]
 ---
 # 계약 (contracts/) 색인
 
@@ -41,3 +41,15 @@ sources: [20 §5, ADR-003, ADR-004, ADR-010, ADR-011]
   - 둘 중 하나라도 실패하면 힌트를 **무시**하고 폴백 해석(ADR-002)으로 진행한다. 실패 사실은 경로·값 없이 코드로만 기록한다.
   - 보안 관련 필드를 추가할 때는 이 목록에 넣고 security 리뷰를 받는다.
 - 문서 계약(`loop-cli.md`, `sse-events.md`)은 frontmatter `schema_version` 과 각 문서의 호환성 절을 따른다.
+
+## 4. 프로세스 내부 인터페이스 (팀 간, 파일 단위 소유 경계)
+HTTP·파일 계약이 아닌 같은 프로세스 안의 팀 간 연결 지점. 40 §1.1 의 파일 단위 소유 분리(ops = health·logging 3파일, backend = 그 밖의 `app/**`)에서 생긴다. 변경은 이 절 갱신 + architecture 리뷰.
+
+| 인터페이스 | 제공(쓰기) | 사용(읽기) | 계약 |
+|------------|------------|------------|------|
+| `app.state.warmup.progress() -> {state, progress}` | backend (T-010 사용량 수집기 데우기) | ops `app/api/health.py` → `GET /api/v1/health` 의 `data.usage_warming` | 반환 = `UsageWarming` 모델 또는 dict `{"state": "not_started"\|"warming"\|"done"\|"unknown", "progress": 0.0~1.0 \| null}`. 인자 없음, 동기, 빠르게 반환(파일 I/O·대기 금지 — 런처가 20 s 동안 반복 호출). 예외를 던지면 health 는 `unknown` 으로 바꾸고 200 유지(경고 로그는 예외 종류만). `app.state.warmup` 이 없거나 `progress` 가 호출 불가면 `not_started`. 회귀 확인 = `monitor/backend/tests/ops` 의 warmup 케이스 |
+| `app.state.services` (`Services`: pipeline, tasks, memory, gates, control, clock) | backend `app/main.py` `create_app` | API 라우터, ops health(`clock`) | 서비스 인스턴스 묶음. 시계는 테스트 주입용 단일 출처 |
+| `app.settings` (`MonitorApp.settings`) | backend `app/config.py` | 가드(`settings.port`, ADR-011 §4), health(`aidlc_root`, `claude_home`, `dist_dir`) | 경로·포트 단일 출처. 요청에서 경로를 받지 않는다(02 §8) |
+| 소스 상태 판정 | ops `app/api/health.py`(`os.stat`/`os.access` 만) | health | `source_status()` 를 backend `services/` 로 옮길지는 T-010 에서 결정(I-26). 옮겨도 판정 규칙(D-34: statusline 10분 초과 = stale, `.control.json` 없음 = 정상)은 그대로 |
+
+- health 응답 형식 자체(`data.app == "aidlc-monitor"` 고정 등)는 `openapi.json` 의 `HealthData` 가 기준이고, 런처 중복 실행 판정이 이 값에 의존한다(ADR-001 Decision 2.4).
