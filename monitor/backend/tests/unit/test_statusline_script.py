@@ -309,6 +309,46 @@ def test_chain_timeout_2s_kills_group(sl) -> None:
     assert b"late" not in proc.stdout and b"AI-DLC 5h 43%" in proc.stdout
 
 
+def _pids_matching(pattern: str) -> list[int]:
+    found: list[int] = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            cmd = (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode()
+        except OSError:
+            continue
+        if pattern in cmd:
+            found.append(int(entry.name))
+    return found
+
+
+@pytest.mark.skipif(not Path("/proc").is_dir() or os.name == "nt", reason="/proc 필요")
+def test_chain_timeout_kills_grandchildren(sl, request) -> None:
+    """qa 변이: killpg → proc.kill() 이면 손자(sleep)가 파이프를 잡아 늦어지고 남는다."""
+    tag = f"{os.getpid() % 1000:03d}{int(time.time()) % 1000:03d}"
+    a, b = f"6{tag}1", f"6{tag}2"
+
+    def cleanup() -> None:
+        for pid in _pids_matching(f"sleep {a}") + _pids_matching(f"sleep {b}"):
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+
+    request.addfinalizer(cleanup)
+    sl.set_global({"type": "command", "command": f"sleep {a} & sleep {b}; wait"})
+    proc, elapsed = sl.run(STDIN)
+    assert proc.returncode == 0 and b"AI-DLC 5h 43%" in proc.stdout
+    assert elapsed < 2.8, f"{elapsed:.2f}s"
+    deadline = time.monotonic() + 1.0
+    left = _pids_matching(f"sleep {a}") + _pids_matching(f"sleep {b}")
+    while left and time.monotonic() < deadline:
+        time.sleep(0.05)
+        left = _pids_matching(f"sleep {a}") + _pids_matching(f"sleep {b}")
+    assert left == [], "남은 손자 프로세스"
+
+
 def test_self_reference_is_skipped(sl) -> None:
     probe = sl.repo / "ran.txt"
     sl.set_global(

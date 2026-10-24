@@ -32,6 +32,10 @@ opened_at: 2026-10-24T00:20:45+00:00
 - 테스트 6파일 +182건(unit: usage_collector 37, usage_resolver 46, statusline_reader 28, statusline_script 28 / api: usage_api 44 / 공용 usage_support). OpenAPI export → docs/api 재생성.
 - 스크래치 사본 변이 6종: 사전 필터 제거·링크 검사 제거·중복 제거 제거·직속 하위 검사 제거·잘림 리셋 제거 = 5/5 검출, symlink is_symlink 제거 1건은 동치 변이(`follow_symlinks=False` 검사가 같은 역할).
 - 로컬 게이트 `monitor/.venv/bin/python monitor/tools/check.py` 전 단계 PASS(frontend SKIP), `python3 -m unittest discover -s aidlc/tests` 31 OK.
+- [조치 1차 — security FAIL] 해석기 cwd 폴백(`_scan_cwd`→`_file_has_cwd`)이 하드 링크를 열던 문제: 공용 `app/services/usage/safe_open.open_regular` 신설(lstat 정규 파일·`st_nlink == 1`·symlink 아님 → `O_RDONLY|O_NOFOLLOW|O_NONBLOCK` → fstat 정규 파일·(dev, ino) 일치·nlink 1, 아니면 close 후 거부). 수집기 `_read_file`(expect=탐색 stat)·해석기 폴백(+ realpath 경계 검사, `Resolution.skipped_files` 건수)·`StatuslineReader.read`(lstat → symlink·하드 링크·FIFO = unreadable) 모두 이 함수로만 연다. WARN 문구를 실제 세는 대상과 맞춰 `하드 링크·일반 파일 아님·경계 밖 기록 파일 N개를 건너뛰었습니다` 로 변경(ops 지적), 폴백 거부 건수도 같은 문구로 기록.
+- 추가 테스트(security): `test_usage_resolver.py::{test_cwd_fallback_never_opens_hardlinks_or_fifos, test_collector_logs_fallback_skips_as_count, test_open_regular_rules}`, `test_usage_collector.py::test_hardlink_swapped_in_after_scan_is_not_read`(+ 기존 `test_hardlinked_files_are_skipped` 에 os.open spy), `test_statusline_reader.py::test_symlink_and_hardlink_snapshot_are_unreadable`. 변이: 폴백을 plain open 으로 되돌림 → 2건 FAIL, fstat 대조 제거 → FAIL.
+- [조치 1차 — qa FAIL] `test_usage_collector.py::test_incremental_reads_only_new_bytes_exact_counts`(requestId 없는 줄 포함 추가 후 정확한 건수·시간 버킷, fdopen spy 로 seek == 이전 크기·읽은 바이트 == 추가 바이트), `test_statusline_script.py::test_chain_timeout_kills_grandchildren`(`sleep A & sleep B; wait` 고유 숫자, elapsed < 2.8 s, /proc 에 남은 손자 0, finalizer 정리). 변이 `_consume` offset 무시·`killpg`→`proc.kill()` 둘 다 검출(실측 정상 2.04 s).
+- 조치 후 게이트 PASS: backend 1000 passed, 커버리지 97%, aidlc unittest OK, OpenAPI 변경 없음(--check 최신).
 
 ## 4. 발견 사항 (LTM 후보)
 - 결정:

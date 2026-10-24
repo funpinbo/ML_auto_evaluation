@@ -632,3 +632,59 @@ def test_encode_rule_matches_fixture_encoder() -> None:
 
     for p in ("/home/user/chatbot", "C:\\x\\y", "/a b/c.d_e"):
         assert app_encode(p) == encode_project_path(p)
+
+
+def test_incremental_reads_only_new_bytes_exact_counts(tmp_path, monkeypatch) -> None:
+    """qa 변이: offset 을 무시하고 0 부터 다시 읽으면 requestId 없는 줄이 두 번 세진다 → 정확한 건수·버킷 + 읽은 바이트 단언."""
+    home = tmp_path / "home"
+    f = write_jsonl(
+        home / "projects" / "p" / "s.jsonl",
+        [usage_line("r1", (1, 0, 0, 0)), usage_line(None, (10, 0, 0, 0))],
+    )
+    col = make_collector(home, tmp_path, hint="p")
+    col.ensure_fresh()
+    assert _totals(col) == [2, 11, 0, 0, 0]
+    first_size = f.stat().st_size
+    append_jsonl(
+        f,
+        [
+            usage_line(None, (100, 0, 0, 0)),
+            usage_line("r2", (1000, 0, 0, 0), ts="2026-10-23T07:30:00.000Z"),
+        ],
+    )
+    appended = f.stat().st_size - first_size
+
+    seeks: list[int] = []
+    read_bytes: list[int] = []
+    real_fdopen = os.fdopen
+
+    class Spy:
+        def __init__(self, fh) -> None:
+            self.fh = fh
+
+        def seek(self, pos, *a):
+            seeks.append(pos)
+            return self.fh.seek(pos, *a)
+
+        def read(self, n=-1):
+            data = self.fh.read(n)
+            read_bytes.append(len(data))
+            return data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.fh.close()
+
+    monkeypatch.setattr(
+        collector_mod.os, "fdopen", lambda fd, *a, **k: Spy(real_fdopen(fd, *a, **k))
+    )
+    col.refresh()
+    assert seeks == [first_size]
+    assert sum(read_bytes) == appended
+    assert _totals(col) == [4, 1111, 0, 0, 0]
+    hours = {k[0]: v[0] for k, v in col.store.buckets_copy().items()}
+    h08 = int(FIXED_NOW.replace(hour=8).timestamp()) // 3600
+    assert hours == {h08: 3, h08 - 1: 1}
+    assert col.store.counts["no_request_id"] == 2
