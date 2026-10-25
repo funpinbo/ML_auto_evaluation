@@ -1,6 +1,6 @@
 ---
-rev: 18
-synced_ltm_rev: 17
+rev: 19
+synced_ltm_rev: 18
 ---
 # Tasks
 
@@ -30,7 +30,7 @@ synced_ltm_rev: 17
 - [x] T-010 [backend] 사용량 수집기(프로젝트 폴더 해석, 증분 커서, `"usage":` 사전 필터, 허용 필드, requestId 중복 제거, 시간 버킷, 데우기) + statusline.sh/py(허용 필드 스냅샷, 원자적 쓰기, 전역 statusLine 체이닝) + settings.json statusLine 등록 + GET /usage/summary, /usage/timeseries — FR-004 | deps: T-002, T-003, T-005, T-020 | DoD: 본문 비노출 테스트·중복 제거 테스트·폴백(스냅샷 없음) 테스트 통과, `transcript_dir_name` 재검증 + `~/.claude/projects` 직속 하위 경계 검사(symlink 포함) 테스트, 응답·로그에 transcript_dir_name 미포함 테스트, `projects/<enc>/` 안 상대 symlink(`creds-link.jsonl -> ../../.credentials.json`, fixture `symlink_escape.credentials_link`) 거부 테스트 (D-13, 출처: STM-0001 §5, STM-0007 §5), V3(일시정지됨) 화면에 세션 활동 정보 제공, `aidlc.py` 모듈 docstring(도움말)에 loop-* 4줄 추가(I-37), `app.state.warmup.progress() -> {state, progress}` 노출(tests/ops warmup 케이스로 회귀 확인)·리더 WARN/INFO 로그(NFR-002, 20 §6)·`source_status()` 서비스 이전 여부 결정(I-26)
 - [x] T-011 [backend] 변경 감지(1초 stat 폴링) + SSE 허브 GET /events(topic: pipeline, plan, tasks, memory, usage, control) — FR-008(최소) | deps: T-005, T-008, T-010 | DoD: 파일 변경 후 5초 이내 이벤트 수신 테스트 통과, 폴링마다 `collector.refresh()` 호출 + `usage` topic·`ready` 이벤트 발행(데우기 완료), `test_sq21_lock_timeout_2s` 에 스레드 + `join(timeout=5)` 경계 추가(I-35), heartbeat 120 s 경계에서 `control` topic 발행(V3 "세션 없음" 전환), sse-events.md 계약(D-12: retry 5000, keep-alive 15 s, 연결 상한 503 TOO_MANY_STREAMS) 테스트, `/api/v1/events` 는 FastAPI `APIRoute` 로 등록(순수 Starlette `Route` 는 HEAD 자동 추가 — STM-0010 실측), D-28 출처 검사(경로 기준, HEAD·POST 405, 교차 출처 HEAD 403, 복수 헤더 403) 및 403·405 전후 실제 활성 슬롯 수 불변·HEAD 가 스트림 핸들러에 닿지 않음을 카운트로 실측, 가드는 라우터와 같은 디코드된 `scope["path"]` 로 비교하고 `/api/v1/%65vents`·`/api/v1/events/` 우회 시 슬롯 미소모 검증(I-20) — 완료 (STM-0017)
 - [x] T-012 [frontend] Vue 3 대시보드(Grafana 다크 테마, 패널 그리드, KPI-01 상단 행, Pipeline/Plan/Task/Memory/사용량 게이지·시계열/루프 제어 패널, API 클라이언트, EventSource + 폴링 폴백) + 빌드 시 `monitor/tools/check_dist_fresh.py --write` 로 `.build-meta.json` 기록(D-36·ADR-005 §4) + `tasks` 이벤트 수신 시 `/plan` 재조회로 P1 진행률 바 갱신(I-17) + 에러 코드 처리에 `METHOD_NOT_ALLOWED` 포함(D-26) + dist 빌드·커밋 — FR-001~005, FR-008 | deps: T-005, T-008, T-010, T-011 | DoD: vue-tsc·vitest·build 통과, 실제 서버에서 화면 확인(스크린샷) — 완료 (STM-0017, T-011 과 T-012 를 빠른 진행 모드로 한 STM 에서 처리, D-51)
-- [ ] T-013 [qa] 핵심 통합·성능 테스트(빠른 진행 모드로 축소, D-51): 500 0건, 응답·로그 본문 0건, 일시정지/재개 E2E(실서버), Task 100 + 30일 JSONL 첫 응답 ≤ 2초(`tests/perf`, marker `perf`) — NFR-001~003, FR-005 | deps: T-012 | DoD: check.py 게이트 PASS, perf 측정값 STM 기록 — 원래 DoD 의 나머지(추적표·home_guard 빈틈 I-19·AC-22 시나리오 I-36·I-32 시나리오·test-cases 문서)는 Backlog T-032
+- [x] T-013 [qa] 핵심 통합·성능 테스트(빠른 진행 모드로 축소, D-51): 500 0건, 응답·로그 본문 0건, 일시정지/재개 E2E(실서버), Task 100 + 30일 JSONL 첫 응답 ≤ 2초(`tests/perf`, marker `perf`) — NFR-001~003, FR-005 | deps: T-012 | DoD: check.py 게이트 PASS, perf 측정값 STM 기록 — 원래 DoD 의 나머지(추적표·home_guard 빈틈 I-19·AC-22 시나리오 I-36·I-32 시나리오·test-cases 문서)는 Backlog T-032 — 완료 (STM-0018)
 - [ ] T-014 [product] UAT(KPI-01 질문 3개, KPI-02 설치 리허설) + 문서화 — /aidlc-docs(OpenAPI export → docs/api, 사용자 가이드, monitor/README) | deps: T-013 | DoD: aidlc.py check docs 통과 + `docs/README.md` 존재(I-15), stories/FR-005.md AC-18 문구를 D-39 규칙(`max(...)+1`, 제어 파일 삭제 = 없음/대기 유지)으로 갱신, UAT 기록(statusLine 실세션 실행 — `CLAUDE_PROJECT_DIR` 제공 여부·VS Code 패널 실행 여부·stdin 키/단위 확인(I-42), 메인 세션·Windows 에서 R-01 재측정 — `/aidlc-run` 일시정지 540 s 대기·재개 리허설(D-41), K2-W 에서 run.bat 실기 + 저장소 루트의 `py.exe`/`python.exe` 우선 탐색 문제 확인, I-32), A11 PO 화면 리뷰 후 FR-001 assumption 해제(D-21)
 
 ## P2 — 운영 편의 (M2)
@@ -48,7 +48,9 @@ synced_ltm_rev: 17
 - T-029 [cicd] httpx2 전환(T-028 후, 새 venv 전체 테스트), `requirements-dev.txt` 헤더 1년 밖 목록 갱신(7건), 런처 테스트 보강(I-31: 종료 코드 매핑·자식/pip env 제거 변수·`--no-cache-dir`·BIND_HOST 단언), `--require-hashes` 도입 평가(P2 전, I-33), release.md, `.gitattributes` 에 `*.bat text eol=crlf`(+renormalize), 게이트 ruff/mypy 대상에 `aidlc/hooks/statusline.py` 추가(I-43) — I-22·I-31·I-33 | deps: T-028 | DoD: 게이트 통과, 변이 재검사 (출처: STM-0012 §5)
 - T-027 [ops] `redact()` 보강: 인코딩 디렉터리명·상대 경로·`file:///`·`~user/`·공백 포함 Windows 경로 가림 + tests/ops 케이스(`127.0.0.1:<port>` URL 은 유지) — I-28 | deps: T-006 | DoD: 케이스 테스트 통과 (출처: STM-0011 §5, security 리뷰 비차단)
 - events.jsonl Hook 이벤트 로그 (ADR-010 보류, 사용자 승인 필요)
-- [ ] T-032 [qa] T-013 에서 분리한 검증 항목: test-strategy S-13·§9 추적표(privacy H-/C- 참조, D-25), FR-004 AC-16 오라클 문구, FR-005 AC-22(I-36), home_guard 빈틈(I-19), SCOPE-01 AC-4·AC-13(I-32), `qa/test-cases/FR-001~005·SCOPE-01.md`, 30일 JSONL 실측으로 I-11 보정 | deps: T-013 (출처: STM-0017, D-51)
+- [ ] T-032 [qa] T-013 에서 분리한 검증 항목: test-strategy S-13·§9 추적표(privacy H-/C- 참조, D-25), FR-004 AC-16 오라클 문구, FR-005 AC-22(I-36), home_guard 빈틈(I-19), SCOPE-01 AC-4·AC-13(I-32), `qa/test-cases/FR-001~005·SCOPE-01.md`, 30일 JSONL 실측으로 I-11 보정(T-013 에서 완료, STM-0018), 콜드 캐시 perf 측정(I-45), 상한(637.8 MB) 규모 REST p95 값 기록(I-45), S-04·S-08·S-09·S-11·S-13 보강 | deps: T-013 (출처: STM-0017, STM-0018, D-51)
+- [ ] T-033 [cicd] (선택, 낮음) 성능 게이트 단계 추가: `check.py` 에 `pytest monitor/backend/tests/perf -m perf` 단계(약 11 s, 현재 기본 실행·게이트 제외) — I-45 | deps: T-013 | DoD: check.py 에 perf 단계 추가, 게이트 통과 (출처: STM-0018 §5)
+- [ ] T-034 [backend] (선택, 낮음) SSE 허브 첫 tick 확인: 구독 직후 1 tick(약 1초) 안의 변경이 `changed` 로 가지 않는 동작이 프론트의 연결 시 REST 재조회로 무해한지 확인(필요 시 문서화) — I-44 | deps: T-011 | DoD: 확인 결과 STM 기록, 필요 시 sse-events.md 에 명시 (출처: STM-0018 §5)
 
 ## Blocked
 - (없음)
