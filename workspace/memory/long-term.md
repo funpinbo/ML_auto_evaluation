@@ -1,6 +1,6 @@
 ---
-rev: 16
-last_merged_stm: 16
+rev: 17
+last_merged_stm: 17
 ---
 # Long-term Memory
 
@@ -59,6 +59,9 @@ last_merged_stm: 16
 | D-46 | 사용량 수집: 폴더 해석 = 인코딩 규칙(대소문자 무시) → 스냅샷 힌트(D-13 패턴 재검증 + `projects/` 직속 하위) → usage 줄 cwd 스캔. `**/*.jsonl` 재귀(30일), 증분 커서(잘림·교체·삭제 시 0부터), `"usage":` 사전 필터 → 허용 필드만 복사, requestId 는 메모리에 해시로만, 전역 last-wins, UTC 시간 버킷(모델×sidechain), lifespan 에서 데우기 스레드 시작(`create_app` 은 파일 I/O 없음, 최근 파일 우선). 패널 상태: 스냅샷 없음 ok+안내, 오래됨/깨짐 partial, 폴더 없음 partial/empty(`PROJECT_DIR_NOT_FOUND`), 깨진 줄은 `skipped_lines` | ADR-002, 30 EDA | - | (STM-0016) |
 | D-47 | **모든 JSONL·스냅샷 열기는 `services/usage/safe_open.open_regular` 하나로**: lstat(일반 파일·비 symlink·nlink==1·expect 일치) → `os.open(O_RDONLY\|O_NOFOLLOW\|O_NONBLOCK)` → fstat(S_ISREG·dev/ino 동일·nlink==1), 거부 시 fd 닫고 None. 하드 링크·FIFO·symlink·경계 밖은 고정 문구 WARN 건수로만 기록 | security 재리뷰 PASS(strace openat 감사) | 스캔 단계 검사만 | (STM-0016) |
 | D-48 | statusLine: `bash "${CLAUDE_PROJECT_DIR:-.}/aidlc/hooks/statusline.sh"`(refreshInterval 30, 프로젝트 `.claude/settings.json` 의 `statusLine` 키만). 스냅샷 9필드(session_hash = sha256 앞 12 hex, transcript_dir_name 한 세그먼트 재검증), 원자적 저장 후 전역 statusLine(`$CLAUDE_CONFIG_DIR` 또는 ~/.claude/settings.json 의 statusLine.command 만 읽음) 같은 stdin 으로 체이닝, 2 s 후 프로세스 그룹 kill, 자기 참조 생략, 항상 exit 0, Python 없으면 빈 줄. 출력 예: `AI-DLC 5h 24% · 7d 41% · $0.12` | ADR-003, Q4 | 전역 설정 수정 | (STM-0016) |
+| D-49 | SSE: `EventHub` 1개가 1초 tick(`collector.refresh` → `Watcher.poll`)을 계산해 연결별 큐(최대 64, 넘치면 오래된 것 버림)로 방송, 구독자 0 이면 tick 작업 취소. topic 서명 = stat(mtime_ns,size), `control` 은 화면 판정(view·버튼)까지 → heartbeat 120 s 경계 감지. 상한 8 → 503, GET 만(`APIRoute`) | sse-events.md, ADR-008 | 연결마다 poll(변경을 서로 빼앗음) | (STM-0017) |
+| D-50 | 프론트: Vite 8 + Vue 3.5 + ECharts 6(필요 모듈만 `echarts/core` 등록) + TS 5.9 + eslint 10 flat + vitest 5(jsdom). `npm run build` = vue-tsc → vite build → `scripts/write-build-meta.mjs`(python3→python→py 로 `check_dist_fresh.py --write`). SSE 실패: 브라우저 자동 재연결 중엔 5초 폴링, 닫힘(503)이면 폴링 + 30초 후 SSE 재시도. 45 s 무프레임 감시는 하지 않음(EventSource 가 주석 프레임을 노출하지 않음) | ADR-005, sse-events.md §1 | - | (STM-0017) |
+| D-51 | **빠른 진행 모드(사용자 합의 2026-10-24)**: 남은 P1 은 Task 당 다중 리뷰 Agent 대신 로컬 게이트(`monitor/tools/check.py`) 전체 PASS + 실서버 E2E 로 리뷰 게이트를 대신하고, 막지 않는 지적은 백로그로. 연관 Task 는 한 STM 에서 묶어 처리 가능 | 진행 속도 피드백 | Task 당 리뷰 2~4팀 | (STM-0017) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -200,7 +203,8 @@ last_merged_stm: 16
 - 사용량: `app/services/usage/{collector,resolver,safe_open}.py`, `statusline_reader.py`, `api/usage.py`, `aidlc/hooks/statusline.{sh,py}`. 테스트 1000건(커버리지 97%), 310 MB/30파일 데우기 약 1.2 s(ops 실측) (STM-0016)
 
 ### frontend
-- (아직 없음)
+- `monitor/frontend/src/{lib/{api,store,events,format,chart}.ts, components/*Panel.vue}`. topic → 재조회 매핑은 `store.TOPIC_KEYS`(`tasks` → tasks+plan, `usage` → summary+timeseries, 모르는 topic 무시). 번들 631 kB(gzip 218 kB, 대부분 ECharts) (STM-0017)
+- 실서버 E2E: loop-start 후 화면 반영 0.8 s(SSE), 일시정지 클릭 → `.control.json` seq 1 pause → loop-check exit 10, 재개·loop-end 반영 확인 (STM-0017)
 - 계약 문서는 jsonschema Draft202012 로 check_schema + examples + 음성 케이스까지 돌려 검증한다 (STM-0001)
 - 경로성 필드는 패턴 검증 + resolve 후 경계 검사 + 노출 금지 3종을 같이 요구한다. symlink 우회 여부는 backend reader 리뷰 때 재확인 (STM-0001)
 
@@ -221,6 +225,8 @@ last_merged_stm: 16
 - 의존성 교체(httpx→httpx2)는 로거 이름 같은 부수 효과로 다른 팀 테스트를 깬다 — 고정 전에 새 venv 로 전체 테스트를 돌린다 (STM-0012)
 - ADR 사실 문장(라이선스·릴리스일)은 표본이 아니라 전수 실측으로 쓴다 — T-007 은 이 때문에 architecture 재리뷰를 2회 받았다 (STM-0012)
 - 상태 파일 장애는 "삭제" 와 "손상" 을 따로 설계한다 — 동작이 다르다(없음 = 정상 대기, broken = exit 2 계속) (STM-0013)
+- 무한 스트림 엔드포인트를 TestClient 로 GET 하면 스위트가 멈춘다 — 슬롯을 미리 채워 503 으로 "핸들러 도달" 을 확인한다. 테스트 안에서 uvicorn 을 띄울 땐 `log_config=None` (로깅 설정이 바뀌어 다른 테스트가 깨짐) (STM-0017)
+- 로컬 1인 도구에 Task 당 다중 리뷰 Agent + 재리뷰 루프는 과했다 — P1 이 14 → 21 Task 로 늘고 화면이 마지막까지 없었다. 보이는 결과물을 먼저 만들고 게이트로 검증한다 (STM-0017)
 
 ## 6. 용어집 (Glossary)
 | 용어 | 정의 |

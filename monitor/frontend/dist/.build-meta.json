@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "algorithm": "sha256",
+  "source_hash": "31bc05f79a7a633be890101448b64d2b94d75b9b8d3f204c54e9e45cc4fccdb9",
+  "inputs": [
+    "src/",
+    "index.html",
+    "package-lock.json",
+    "vite.config.ts"
+  ],
+  "file_count": 21
+}
