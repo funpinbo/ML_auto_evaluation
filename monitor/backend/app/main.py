@@ -149,7 +149,9 @@ def create_app(
         return None if data is None else (data.view, data.can_pause, data.can_resume)
 
     app.state.events = events_api.EventHub(
-        Watcher(root, control_view=control_view, usage_activity=collector.last_activity),
+        Watcher(
+            root, control_view=control_view, usage_activity=collector.last_activity
+        ),
         refresh=collector.refresh,
         progress=collector.progress,
     )

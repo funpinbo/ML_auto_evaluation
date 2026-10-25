@@ -15,7 +15,6 @@ from app.api.events import EventHub, frame
 from app.services.watcher import Watcher
 
 
-
 @pytest.fixture
 def root(engine_workspace) -> Path:
     return engine_workspace("full").root
@@ -103,21 +102,29 @@ def test_stream_limit_503(root: Path) -> None:
 
 def test_live_stream_receives_change_within_5s(root: Path) -> None:
     """실제 uvicorn 위에서: 연결 → retry·ready 프레임 → tasks.md 변경 → 5초 안에 changed."""
+    import socket
     import threading
 
     import httpx
     import uvicorn
-
-    from app.main import create_app
     from backend_support import make_settings
 
-    import socket
+    from app.main import create_app
 
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     settings = dataclasses.replace(make_settings(root), port=port)
-    server = uvicorn.Server(uvicorn.Config(create_app(settings), host="127.0.0.1", port=port, log_level="error", lifespan="off"))
+    server = uvicorn.Server(
+        uvicorn.Config(
+            create_app(settings),
+            host="127.0.0.1",
+            port=port,
+            log_config=None,
+            access_log=False,
+            lifespan="off",
+        )
+    )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     try:

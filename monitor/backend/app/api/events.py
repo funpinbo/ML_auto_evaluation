@@ -42,7 +42,9 @@ def frame(event: str, data: dict[str, Any]) -> str:
 
 def warm_frame(progress: dict[str, Any]) -> str:
     if progress.get("state") == "warming":
-        return frame("warming", {"progress": progress.get("progress") or 0.0, "at": _now()})
+        return frame(
+            "warming", {"progress": progress.get("progress") or 0.0, "at": _now()}
+        )
     return frame("ready", {"at": _now()})
 
 
@@ -124,7 +126,9 @@ def hub(request: Request) -> EventHub:
     return request.app.state.events  # type: ignore[no-any-return]
 
 
-async def stream(request: Request, hub_: EventHub, queue: asyncio.Queue[str]) -> AsyncIterator[str]:
+async def stream(
+    request: Request, hub_: EventHub, queue: asyncio.Queue[str]
+) -> AsyncIterator[str]:
     try:
         yield f"retry: {RETRY_MS}\n\n"
         yield warm_frame(hub_.progress())
@@ -141,11 +145,16 @@ async def stream(request: Request, hub_: EventHub, queue: asyncio.Queue[str]) ->
 
 @router.get(
     "/events",
-    responses={**ERROR_RESPONSES, 503: {"description": "TOO_MANY_STREAMS — 동시 연결 상한 8"}},
+    responses={
+        **ERROR_RESPONSES,
+        503: {"description": "TOO_MANY_STREAMS — 동시 연결 상한 8"},
+    },
     response_class=StreamingResponse,
     summary="변경 알림 스트림 (text/event-stream)",
 )
-async def get_events(request: Request, hub_: Annotated[EventHub, Depends(hub)]) -> StreamingResponse:
+async def get_events(
+    request: Request, hub_: Annotated[EventHub, Depends(hub)]
+) -> StreamingResponse:
     """`changed{topics}`·`warming`·`ready` 이벤트와 15초 keep-alive. 형식 기준은 contracts/sse-events.md."""
     queue = hub_.subscribe()
     return StreamingResponse(

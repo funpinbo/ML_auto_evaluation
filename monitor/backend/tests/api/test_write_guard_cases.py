@@ -288,8 +288,10 @@ def test_events_duplicate_headers_rejected(guarded, name: bytes) -> None:
 )
 def test_events_same_origin_passes_guard(guarded, headers) -> None:
     app, _ = guarded
+    # 슬롯을 미리 채워 두면 핸들러에 닿았을 때 503 이 된다 — 가드를 통과했다는 증거 (스트림은 열지 않음)
+    app.state.events.subscribers.update(object() for _ in range(app.state.events.limit))
     resp = make_client(app).get(EVENTS, headers=headers)
-    assert resp.status_code == 200  # 대역 핸들러 도달 (실제 스트림은 T-011)
+    assert resp.status_code == 503
 
 
 def test_events_origin_check_not_applied_to_other_gets(guarded) -> None:

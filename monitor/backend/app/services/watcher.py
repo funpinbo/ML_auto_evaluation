@@ -49,7 +49,11 @@ class Watcher:
     ) -> None:
         mem = root / "workspace" / "memory"
         self._files: dict[str, list[Path]] = {
-            "memory": [mem / "short-term.md", mem / "long-term.md", mem / ".cascade-state.json"],
+            "memory": [
+                mem / "short-term.md",
+                mem / "long-term.md",
+                mem / ".cascade-state.json",
+            ],
             "tasks": [mem / "tasks.md"],
             "plan": [mem / "plan.md", mem / "tasks.md"],
             "control": [mem / ".control.json", mem / ".monitor" / "loop-status.json"],
