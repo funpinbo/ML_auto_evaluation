@@ -70,8 +70,10 @@ FR 별 수용 기준 → 테스트 ID 추적은 product 스토리(T-004) 확정 
 ## 5. 성능 fixture 와 측정 절차
 - 크기 조절: `write_project_jsonl(project_dir, responses_per_day=..., body_pad=...)`. `body_pad` 는 줄마다 붙이는 본문 채움 바이트다(본문 표식은 유지).
 - 실측(2026-10-23, 이 저장소 venv, Python 3.13): 기본값(12/일, pad 0) 1.6 MB·52 파일·1,684 줄·0.03 s / `responses_per_day=300, body_pad=3000` 129.4 MB·33,891 줄·1.09 s / `300, 8000` 298.9 MB·2.04 s. 크기는 pad 에 대략 선형 → **하한 329 MB 는 `300, 9000`, 상한 658 MB 는 `300, 18000` 근처**(추정치, perf 테스트가 `manifest.bytes_written` 을 기록해 확인).
-- perf 테스트는 `@pytest.mark.perf` 로 표시하고 기본 실행에서 제외할 수 있다(marker 등록은 backend 의 pytest 설정 파일과 함께 T-013 에서). 측정값은 Phase 품질 리포트에 기록한다(charter §7 "NFR 측정값 기록").
+- perf 테스트는 `@pytest.mark.perf` 로 표시한다. marker 는 `conftest.py` 가 등록하고, `-m` 식에 perf 가 없으면 수집 단계에서 제외한다(`check.py` 게이트 영향 없음). 켜기: `pytest monitor/backend/tests/perf -m perf -s`, 전체와 함께: `-m "perf or not perf"`. 측정값은 Phase 품질 리포트에 기록한다(charter §7 "NFR 측정값 기록").
 - 생성은 `tmp_path_factory` 의 session 범위로 1회만 하고, 측정 대상은 서버 기동 후 첫 요청부터 모든 Must 패널 응답까지의 벽시계 시간이다.
+
+- **실측 (T-013, 2026-10-25, Linux, Python 3.13, 페이지 캐시 따뜻함)**: `300, 9000` = 332.8 MB·33,891 줄·52 파일·생성 2.9 s (추정 329 MB 와 1% 차이) / `300, 18000` = 637.8 MB·생성 5.3 s (추정 658 MB 와 3% 차이). 줄 수는 pad 와 무관. 이 크기에서 서버 프로세스 시작→health 0.6 s, Must 패널 8개 동시 요청 전부 응답 0.3 s(사용량은 warming 부분값), 데우기 완료 약 1 s, REST p95 ≤ 7 ms, 변경→SSE 0.5 s. 콜드 캐시·느린 디스크 측정은 하지 않았다.
 
 ## 6. Fixture 카탈로그와 사용 규칙
 모듈은 `monitor/backend/tests/fixtures/`, pytest fixture 는 `tests/conftest.py`.
@@ -129,6 +131,14 @@ FR 별 수용 기준 → 테스트 ID 추적은 product 스토리(T-004) 확정 
 ### 6.8 계약·오라클
 - `fixtures/contracts.py`: `schema_errors(instance, name)` / `is_valid()` — `control`, `loop-status`, `claude-status` 를 Draft 2020-12 로 검증(`format` 비강제, pattern 으로 강제). 오류 메시지는 입력 값을 담을 수 있으므로 로그에 쓰지 않는다.
 - `fixtures/reference_parser.py`: ADR-002 규칙의 최소 독립 구현(사전 필터 → loads → `message.usage` dict 확인 → requestId last-wins → UTC 시간 버킷, symlink·만료 파일 제외). **앱 코드가 아니며** 앱에서 import 하지 않는다.
+
+### 6.8a 시나리오 도우미 (T-013)
+- `fixtures/engine.py`: `install_engine(root)` — Hook·`aidlc.py`·`loop_control.py`·템플릿을 workspace 로 복사(루프 CLI 는 자기 위치로 저장소 루트를 계산하므로 복사본으로 실행한다).
+- `fixtures/live_server.py`: `live_server(root, claude_home, work_dir)` — `python -m app` 을 임시 포트·127.0.0.1·환경 변수 경로로 기동, 로그 파일 수집, `sse_frames()`.
+- `fixtures/endpoints.py`: GET 엔드포인트 전수 목록(`MUST_PANELS`, `ALL_GETS`). 새 라우트가 생기면 `test_endpoint_list_covers_app_routes` 가 실패한다.
+- `scenarios/guardrail_support.py`: 인프로세스 클라이언트, workspace 5종 × 소스 변형 7종.
+
+구현된 시나리오(T-013 축소판, D-51): S-01~S-03 `test_guardrail_no_500.py`, S-05~S-07 `test_no_body_exposure.py`, S-10 `test_readonly_hash.py`, S-12 `test_pause_resume_e2e.py`, P-01·P-02 `perf/test_first_screen_perf.py`. 나머지(S-04, S-08, S-09, S-11, S-13 대조 보강 등)는 Backlog T-032.
 
 ### 6.9 사용 규칙
 - fixture 가 만든 파일은 테스트 안에서 바꿔도 되지만(그 테스트 전용 `tmp_path`), 모듈 상수·생성 규칙은 바꾸지 않는다. 변형이 필요하면 생성기 인자로 하고, 없는 인자는 `[qa]` 후보로 요청한다.

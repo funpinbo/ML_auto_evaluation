@@ -1,6 +1,6 @@
 ---
-rev: 17
-last_merged_stm: 17
+rev: 18
+last_merged_stm: 18
 ---
 # Long-term Memory
 
@@ -62,6 +62,7 @@ last_merged_stm: 17
 | D-49 | SSE: `EventHub` 1개가 1초 tick(`collector.refresh` → `Watcher.poll`)을 계산해 연결별 큐(최대 64, 넘치면 오래된 것 버림)로 방송, 구독자 0 이면 tick 작업 취소. topic 서명 = stat(mtime_ns,size), `control` 은 화면 판정(view·버튼)까지 → heartbeat 120 s 경계 감지. 상한 8 → 503, GET 만(`APIRoute`) | sse-events.md, ADR-008 | 연결마다 poll(변경을 서로 빼앗음) | (STM-0017) |
 | D-50 | 프론트: Vite 8 + Vue 3.5 + ECharts 6(필요 모듈만 `echarts/core` 등록) + TS 5.9 + eslint 10 flat + vitest 5(jsdom). `npm run build` = vue-tsc → vite build → `scripts/write-build-meta.mjs`(python3→python→py 로 `check_dist_fresh.py --write`). SSE 실패: 브라우저 자동 재연결 중엔 5초 폴링, 닫힘(503)이면 폴링 + 30초 후 SSE 재시도. 45 s 무프레임 감시는 하지 않음(EventSource 가 주석 프레임을 노출하지 않음) | ADR-005, sse-events.md §1 | - | (STM-0017) |
 | D-51 | **빠른 진행 모드(사용자 합의 2026-10-24)**: 남은 P1 은 Task 당 다중 리뷰 Agent 대신 로컬 게이트(`monitor/tools/check.py`) 전체 PASS + 실서버 E2E 로 리뷰 게이트를 대신하고, 막지 않는 지적은 백로그로. 연관 Task 는 한 STM 에서 묶어 처리 가능 | 진행 속도 피드백 | Task 당 리뷰 2~4팀 | (STM-0017) |
+| D-52 | perf 테스트(`tests/perf`, marker `perf`)는 `-m` 식에 `perf` 가 없으면 conftest 가 수집 단계에서 제외(skip 이 아니라 deselect) → 기본 실행·`check.py` 게이트에서 빠지며 check.py 무변경. 켜기 `-m perf`, 전체 `-m "perf or not perf"` | 게이트 시간 보호(perf 약 11 s) | skip 처리, 게이트 포함 | (STM-0018) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
 - 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
@@ -114,6 +115,8 @@ last_merged_stm: 17
 - 본문 비접근 증명: 허용 목록 밖 키 접근 시 실패하는 trap dict, `json.loads` spy 로 사전 필터 증명 (STM-0016)
 - 다층 방어는 층마다 따로 테스트한다 — 한 층을 지워도 다른 층이 막아 변이가 살아남는다(T-010 변이 24종 중 3건 동치 수용) (STM-0016)
 - 증분 읽기 테스트는 추가 후 정확한 건수 + 실제 seek/읽은 바이트를 단언 — offset 무시 회귀를 잡는다 (STM-0016)
+- 수백 MB fixture 는 pytest tmp(3회분 보관)가 아니라 `tempfile.mkdtemp` + `shutil.rmtree` 로 만들고 지운다 (STM-0018)
+- 실서버 시나리오는 `fixtures/live_server.py` 의 `live_server()`(임시 포트, HOME·AIDLC_ROOT·CLAUDE_HOME 주입, 로그 파일 수집)를 쓴다. 루프 CLI E2E 는 `install_engine()` 으로 workspace 에 복사한 `aidlc.py` 를 실행한다(loop_control 이 자기 위치로 루트 계산) (STM-0018)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
@@ -128,7 +131,7 @@ last_merged_stm: 17
 | ~~I-08~~ | jsonschema(dev) 가 ADR-006 dev 목록에 없음 | 문서 정합성 | 열림 → T-021 | (STM-0004) → **해소** (STM-0005, ADR-011 §4·§5 / ADR-006) |
 | ~~I-09~~ | 홈 격리가 function 범위라 session 범위 fixture·수집 시점 import 는 실제 HOME 을 볼 수 있음, `CLAUDE_CONFIG_DIR` 미처리 | 테스트 신뢰성·개인정보 | 열림 → T-023 (T-005 전) | (STM-0004) → **해소** (STM-0007: 3겹 격리 + audit-hook 가드, 95 passed) |
 | I-10 | 하드 링크는 `resolve()` 경계 검사로 탐지 불가 | 경로 이탈 | 열림 → T-022 (방침 결정) | (STM-0004) → 일부: 수집·폴백·스냅샷 모두 하드 링크 건너뜀(STM-0016), 문서 방침은 T-022 |
-| I-11 | 30일 JSONL 329~658 MB 크기는 선형 추정(pad 9000~18000) | 성능 테스트 정확도 | 열림 → T-013 실측 | (STM-0004) |
+| ~~I-11~~ | 30일 JSONL 329~658 MB 크기는 선형 추정(pad 9000~18000) | 성능 테스트 정확도 | 열림 → T-013 실측 | (STM-0004) → **해소** (STM-0018: 실측 332.8 MB / 637.8 MB, 추정이 정확. test-strategy §5 반영) |
 | ~~I-12~~ | `jsonschema-specifications 2025.9.1` 이 02 §9 "최근 1년 내 릴리스" 경계(약 13개월) — dev·전이 전용이라 수용 | 의존성 정책 | 감시 → T-007 고정 시 최신 확인 | (STM-0005) → **해소** (STM-0012: 36개 핀 PyPI 실측, ADR-006 Decision 5 예외 표) |
 | ~~I-13~~ | privacy.md N-02·N-04 가 ADR-011 §4·§5 와 불일치(포트 검사 "선택", TrustedHost 문구), 중복 Host·선행 0·userinfo·Content-Type 접두 함정 케이스 없음 | T-005 리뷰 기준 | 열림 → T-024 (T-005 전) | (STM-0005) → **해소** (STM-0008: privacy.md §5.1 H-01~H-22, §5.2 C-01~C-11) |
 | ~~I-14~~ | ADR-011 §9 에 405(OPTIONS 포함)·Starlette 기본 HTTPException 매핑 규칙과 기본 `{"detail":...}` 본문 금지가 없음, HostGuard 의 websocket/lifespan scope 처리 미정, SSE GET Origin 검사 여부 미정(교차 출처 EventSource 로 슬롯 소모 → 가용성) | 앱 셸 구현 | 열림 → T-025 (T-005 전) | (STM-0005) → **해소** (STM-0009, ADR-011 §9~§12) |
@@ -136,7 +139,7 @@ last_merged_stm: 17
 | ~~I-16~~ | 루프 도중 `.control.json` 이 깨지거나 삭제되면 대시보드가 seq 1 을 써서 `baseline_seq` 이하가 되어 CLI 가 새 pause/resume 을 무시 | FR-005 신뢰성 | 열림 → T-026 (T-008 전) | (STM-0006) → **해소** (STM-0013, ADR-004 Decision 1.1, loop-cli §7) |
 | I-17 | FR-002 Phase 진행률 바: `plan` SSE topic 이 M2 라 P1 에서 실시간 갱신 보장 안 됨(01 §5.1 흐름 3 과 어긋남) | UX | 열림 → T-012 에서 `tasks` 이벤트 시 `/plan` 재조회 | (STM-0006) |
 | I-18 | PO 미답 질문: Q-P1(단계 3 에 `.claude/agents` 요구?), Q-P2(docs Gate 빈 대상), Q-P3(run.bat 실패 시 창 유지), Q-P4(R-01 실패 시 후퇴안은 01 §10 과 다름 → PO 결정) | 수용 기준 | 열림 → 사용자에게 질문 | (STM-0006); Q-P3 은 권장 기본값으로 구현(D-37), Q-P5(user/02 §9 가 전이 의존성에도 적용되는가 — 현재 직접 채택에만 적용) 추가 |
-| I-19 | home_guard 빈틈: 인자 없는 `os.listdir()` 통과(None 인자), 경로 판정 중 OSError 시 통과, 원래 `XDG_CONFIG_HOME/claude` 미등록. 가드 밖: 정수 fd·`dir_fd`·`os.stat`/`os.readlink`·서브프로세스 서버 — test-strategy 에 미기재 | 테스트 격리 | 열림 → T-013 (비차단) | (STM-0007) |
+| I-19 | home_guard 빈틈: 인자 없는 `os.listdir()` 통과(None 인자), 경로 판정 중 OSError 시 통과, 원래 `XDG_CONFIG_HOME/claude` 미등록. 가드 밖: 정수 fd·`dir_fd`·`os.stat`/`os.readlink`·서브프로세스 서버 — test-strategy 에 미기재 | 테스트 격리 | 열림 → T-013 (비차단) → T-013 은 빠른 진행 모드로 축소되어 미처리, T-032 로 이월 (STM-0018) | (STM-0007) |
 | I-20 | 출처 가드의 경로 비교 기준(디코드된 `scope["path"]` vs `raw_path`, 끝 슬래시) 미정 → `/api/v1/%65vents` 등으로 우회 가능성 | SSE 가용성 | 열림 → T-011 (가드는 라우터와 같은 디코드 path 로 비교 + 우회 경로 슬롯 카운트 테스트) | (STM-0009) |
 | ~~I-21~~ | Starlette 자동 HEAD·405 가로채기 동작은 이 환경에 FastAPI 가 없어 실행 미확인 | 계약 준수 | 열림 → T-005·T-011 테스트로 고정 | (STM-0009) → **해소** (STM-0010: FastAPI 0.161.1 `APIRoute(GET)` 는 HEAD 미추가 → 405 실측, 순수 Starlette `Route` 는 HEAD 추가 → T-011 은 APIRoute) |
 | I-22 | fastapi 0.161.1 전이 의존성 `opentelemetry-api`(Apache-2.0)·`annotated-doc`(MIT) 가 ADR-006 에 없음, TestClient httpx → httpx2 폐기 예고. 텔레메트리는 SDK·exporter 없고 auto_configure 기본 False 라 외부 전송 없음 | 의존성 기록 | 열림 → T-007(httpx 결정)·T-009(ADR-006 기록) | (STM-0010) → 일부 해소: ADR-006 기록 완료(STM-0012). httpx2 전환은 ops 의 httpx2 로거 억제 후 T-029 |
@@ -149,11 +152,11 @@ last_merged_stm: 17
 | ~~I-29~~ | user/02 §10 DoD "타입 검사 통과" 인데 venv 에 타입 검사기 없음, backend 기존 mypy 오류 2건(`aidlc_reader.py`, `pipeline.py`) | DoD 준수 | 열림 → T-007(mypy dev 의존성)·T-008(오류 수정) | (STM-0011, qa 리뷰) → **해소** (STM-0014: mypy 5건 수정, 게이트 PASS) |
 | ~~I-30~~ | backend mypy 오류는 5건/4파일(aidlc_reader.py:173, pipeline.py:294, security.py:203·204, static_files.py:86) → 로컬 게이트 FAIL | DoD(user/02 §10) | 열림 → T-008 | (STM-0012) → **해소** (STM-0014) |
 | I-31 | 런처 테스트가 못 잡는 변이 8/15: `_STOP_CODES` 매핑 제거, `--no-cache-dir` 제거, 자식 env 변수 제거 누락, 런처 BIND_HOST 변경 등 | 회귀 탐지 | 열림 → T-029 | (STM-0012, qa 리뷰) |
-| I-32 | 미검증: run.bat 실기(Windows), cmd 가 현재 폴더의 `py.exe`/`python.exe` 를 먼저 찾는 문제, Node 없이 첫 화면(AC-4)·빈 패널 화면(AC-13)은 dist 이후 | KPI-02·SCOPE-01 | 열림 → T-014(UAT K2-W)·T-013 | (STM-0012) |
+| I-32 | 미검증: run.bat 실기(Windows), cmd 가 현재 폴더의 `py.exe`/`python.exe` 를 먼저 찾는 문제, Node 없이 첫 화면(AC-4)·빈 패널 화면(AC-13)은 dist 이후 | KPI-02·SCOPE-01 | 열림 → T-014(UAT K2-W)·T-013 → 시나리오 부분은 T-032 로 이월 (STM-0018) | (STM-0012) |
 | I-33 | 공급망: `==` 고정이나 해시 미검증(`--require-hashes` 없음), health 응답 위장(같은 사용자 로컬 프로세스) 위험이 threat-model 에 미기재 | 공급망 | 열림 → T-029(P2 전 평가)·T-022(문서) | (STM-0012, security 리뷰) |
 | I-34 | JSON 중복 키는 마지막 값 사용 — CLI·대시보드 판정 일치 근거가 stdlib 동작뿐 | 루프 제어 | 수용(L) | (STM-0013, security 재리뷰) |
 | I-35 | `test_sq21_lock_timeout_2s` 경계 없음 — 락 timeout 이 사라지면 스위트가 멈춤 | 테스트 신뢰성 | 열림 → T-011 | (STM-0014, qa 리뷰) |
-| I-36 | FR-005 AC-22(제어 파일 유무가 Hook `pending()`·`summary()` 에 영향 없음) 테스트 없음 | 수용 기준 | 열림 → T-013 | (STM-0014, qa 리뷰) |
+| I-36 | FR-005 AC-22(제어 파일 유무가 Hook `pending()`·`summary()` 에 영향 없음) 테스트 없음 | 수용 기준 | 열림 → T-013 → T-032 로 이월 (STM-0018) | (STM-0014, qa 리뷰) |
 | ~~I-37~~ | 문서 정합: 20 §5 F3 가 resume 본문 `{"max_pause_sec":..}` 허용처럼 적힘(실제 `{}` 만), ControlView 실제 필드·"loop-status 없음 = ended + empty" 미반영, `aidlc.py` docstring 의 loop-* 줄 | 문서 | 열림 → T-009 | (STM-0014) → **해소** (STM-0015, T-009 문서 정합) — aidlc.py docstring 은 T-010 [backend] |
 | I-38 | 하드닝 권고(비차단): 요청 본문 크기 상한 없음(5 MB 도 메모리로 읽힘), `.control.json` 자리 FIFO 면 open 멈춤, resume `null` 본문 = 생략 취급 | 가용성(L) | Backlog T-030 | (STM-0014, security 리뷰) |
 | I-39 | 런북 pause-not-releasing.md: "세션 없음/pause_timeout" 조치가 "재개 후 /aidlc-run" 으로 틀림(V6·V1 은 재개 버튼 비활성) + running 중 세션 종료 항목 누락 | 운영 문서 | 열림 → T-028 | (STM-0015, ops 리뷰) |
@@ -161,6 +164,8 @@ last_merged_stm: 17
 | I-41 | 문서 정합: 20 §5 usage 행(summary `tz_offset_min`, 열 지향 timeseries, ControlData `session_activity_*`), contracts/README §4 services 에 usage·I-26 결정, ADR-002 Consequences 에 시간 버킷 근사(반시간 TZ 일 경계 ±30분, 5h 창이 시작 전 최대 1시간 포함), ADR-003 `$CLAUDE_CONFIG_DIR` 지원 | 문서 | Backlog T-031 [architecture] | (STM-0016) |
 | I-42 | 미실측: statusLine 실행 환경의 `CLAUDE_PROJECT_DIR` 제공 여부, VS Code 패널의 statusLine 실행 여부(A5), stdin 키·단위 | FR-004·ADR-003 | 열림 → T-014 UAT | (STM-0016) |
 | I-43 | 로컬 게이트 ruff/mypy 대상에 `aidlc/hooks/statusline.py` 미포함(수동 ruff 만), safe_open 의 lstat~open 사이 FIFO 교체 경합 테스트 없음, 거부된 파일의 커서 항목이 한 주기 남음 | 품질 | Backlog T-029·T-030 | (STM-0016) |
+| I-44 | SSE 허브의 첫 tick 이 변경 감지 기준선을 잡아, 첫 구독 직후 1 tick(약 1초) 안의 변경은 `changed` 로 알려지지 않음. 프론트가 연결 시 REST 를 재조회하면 무해(제품 결함으로 보지 않음) | SSE 실시간성(L) | 열림 → [backend] 낮음/선택: 동작 확인만 | (STM-0018) |
+| I-45 | perf 측정은 페이지 캐시가 따뜻한 상태만 — 콜드 디스크(첫 실행) 미측정. 상한(637.8 MB) 규모 REST p95 는 통과만 확인하고 값 미기록. 성능 게이트(`check.py` 에 `-m perf` 단계, 약 11 s)는 필수 아님 | NFR-001 신뢰도 | 열림 → T-032(콜드 캐시), [cicd] 게이트화는 선택 | (STM-0018) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
@@ -178,6 +183,8 @@ last_merged_stm: 17
 - (아직 없음)
 - fixture 9종(workspace, jsonl_gen, claude_home, hashing, markers, contracts, runtime_files, reference_parser) + smoke 72건. 실행: `monitor/.venv/bin/python -m pytest monitor/backend/tests -q` (STM-0004)
 - home_guard + test_home_guard(21건). 전체 95 passed. 반쪽 커밋 재개 때 실패 원인은 `import os` 누락 하나였다 (STM-0007)
+- T-013 시나리오(`tests/scenarios`, 공용 `fixtures/{engine,live_server,endpoints}.py`): 가드레일 500 0건 38, 본문 비노출 15(응답·헤더·caplog·실서버 로그·SSE 프레임), 해시 불변 8, 일시정지/재개 E2E 6(정상, 2시간 초과 exit 20, heartbeat 만료 V6, 깨진 .control.json 3종 exit 2). `pytest monitor/backend/tests -q` 1078 passed(perf 10 deselected), `-m "perf or not perf"` 1088 passed(99.6 s), check.py 12/12 PASS. perf 규칙은 D-52, fixture·실서버 패턴은 §2 (STM-0018)
+- perf 실측(Linux, Python 3.13, 캐시 따뜻함, 실서버+HTTP; 하한 332.8 MB / 상한 637.8 MB, 33,891줄 / 52파일, Task 100): fixture 생성 2.9/5.3 s, 시작→health 0.57/0.52 s, 첫 화면 Must 패널 8개 동시 요청 0.34/0.28 s(기준 ≤ 2 s, 사용량 status=warming), 데우기 완료 0.85~1.1/1.36 s, REST p95 3.1~6.4 ms(하한, 기준 ≤ 200 ms), 파일 변경→SSE changed 0.52 s(기준 ≤ 5 s). NFR-001 충족 (STM-0018)
 
 ### cicd
 - (아직 없음)
@@ -227,6 +234,8 @@ last_merged_stm: 17
 - 상태 파일 장애는 "삭제" 와 "손상" 을 따로 설계한다 — 동작이 다르다(없음 = 정상 대기, broken = exit 2 계속) (STM-0013)
 - 무한 스트림 엔드포인트를 TestClient 로 GET 하면 스위트가 멈춘다 — 슬롯을 미리 채워 503 으로 "핸들러 도달" 을 확인한다. 테스트 안에서 uvicorn 을 띄울 땐 `log_config=None` (로깅 설정이 바뀌어 다른 테스트가 깨짐) (STM-0017)
 - 로컬 1인 도구에 Task 당 다중 리뷰 Agent + 재리뷰 루프는 과했다 — P1 이 14 → 21 Task 로 늘고 화면이 마지막까지 없었다. 보이는 결과물을 먼저 만들고 게이트로 검증한다 (STM-0017)
+- 선형 추정(test-strategy §5)도 실측으로 확인하면 근거가 된다 — 30일 JSONL 추정 329/658 MB 는 실측 332.8/637.8 MB 로 정확했다 (STM-0018)
+- 테스트가 제품의 숨은 타이밍 동작(SSE 첫 tick 기준선 흡수)을 드러내면 결함으로 단정하지 말고 영향(프론트 재조회로 무해)을 따져 관찰로 기록한다 (STM-0018)
 
 ## 6. 용어집 (Glossary)
 | 용어 | 정의 |

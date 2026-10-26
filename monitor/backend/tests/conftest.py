@@ -61,6 +61,11 @@ _SESSION_HOME: dict[str, str] = {}
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "perf: 성능 시나리오(Task 100 + 30일 JSONL, 수백 MB 생성). "
+        "기본 실행에서는 제외되고 `-m perf` 또는 `-m 'perf or not perf'` 로 켠다",
+    )
     for root in default_allowed_roots(REPO_ROOT):
         HOME_GUARD.allow(root)
     session_home = tempfile.mkdtemp(prefix="qa-session-home-")
@@ -72,6 +77,18 @@ def pytest_configure(config: pytest.Config) -> None:
     for var in CLEARED_VARS:
         os.environ.pop(var, None)
     HOME_GUARD.install()
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """`-m` 식이 perf 를 언급하지 않으면 perf 테스트를 뺀다 (로컬 게이트 `check.py` 는 건드리지 않는다)."""
+    if "perf" in (config.getoption("markexpr") or ""):
+        return
+    perf = [item for item in items if item.get_closest_marker("perf")]
+    if perf:
+        config.hook.pytest_deselected(items=perf)
+        items[:] = [item for item in items if item not in perf]
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
