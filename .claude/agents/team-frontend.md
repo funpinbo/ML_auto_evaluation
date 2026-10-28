@@ -30,11 +30,11 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 
 ## 팀 특화 지침
 - E2E 테스트용 data-testid 를 qa 와 합의된 규칙으로 붙인다.
-- 스택: TypeScript 5 strict, Vue 3.5(`<script setup>`), Vite 8, ECharts 6(`echarts/core` 트리 셰이킹). 런타임 의존성은 vue·echarts 2개뿐 — 라우터·상태관리·차트 래퍼 금지(ADR-007). 의존성 변경은 cicd 소유 `package.json` 에 STM 후보로.
-- 소유: `monitor/frontend/src/**`(colocated `*.spec.ts` 포함), `monitor/frontend/dist/**`, vite/tsconfig/eslint/prettier 설정, `workspace/project/design/`(design 팀 인수). `monitor/frontend/tests/` 는 qa 소유.
-- 테스트·빌드 명령: `cd monitor/frontend && npm test`, `npm run lint`, `npx vue-tsc --noEmit`, `npm run build`. src 를 바꾸면 dist(+ `.build-meta.json`)를 같은 커밋에 포함(02 §4, ADR-005).
-- UI: Grafana 스타일 다크 테마, 12열 패널 그리드, 상단 행 = KPI-01 세 질문(단계·현재 Task·5시간 %). 모든 패널에 empty/error/warming 상태. CDN·웹폰트·외부 URL 로드 금지(QS-13).
-- 실시간: EventSource `/api/v1/events` 의 `changed` topic 에 해당하는 패널만 재조회, 연결 실패 시 5초 폴링 폴백. TS 타입은 `contracts/openapi.json` 과 맞춘다.
+- 프로젝트: ML_miniops. 스택: FastAPI 내장 Jinja2 템플릿 + 바닐라 JS, Node 빌드 없음(02§1). 라우터·상태관리 프레임워크·클라이언트 차트 JS 라이브러리 전부 불필요 — 차트는 서버사이드 pandas `DataFrame.plot` + matplotlib(Agg) 로 PNG 생성 후 base64 임베드(20§7).
+- 소유: `app/web/`(업로드 폼, N:M 연결 화면, 지표 선택 UI, Run 버튼, 결과 화면 템플릿+JS+정적 파일), `app/eval/visualize.py`(지표 비교 그래프 P1, 상관관계 그래프 P2, 10§5). design 팀이 없으므로(40§2) 화면 상태(기본/로딩/오류/빈)도 frontend 가 직접 정의한다. `app/api/`·`app/eval/engine.py` 등은 backend 소유 — 건드리지 않는다.
+- 화면 구성: ① 업로드 폼(모델 framework + `problem_type` 분류/회귀 선택, 30§5.2) ② N:M 연결 화면 ③ 지표 선택 UI(선택된 모델들의 호환 지표 합집합 노출, 비호환은 비활성화/제외) ④ Run 버튼 ⑤ 결과 화면(지표 비교 그래프, P2 상관관계 그래프). `skipped_incompatible` 상태의 Evaluation 은 그래프에서 제외하거나 별도 표기한다(30§7).
+- 테스트·확인 명령: `pytest`(선택, 02§5) + 수동 브라우저 확인(02§10 DoD "기능이 수동 확인으로 동작함"). 접근성/Core Web Vitals 자동 검사 도구는 두지 않는다(design 팀 미생성, 1일 프로젝트).
+- API 응답 포맷은 FastAPI 기본 `HTTPException`(`{"detail": "..."}`, 02§6) — 에러 화면은 이 포맷을 그대로 사용자에게 보여준다.
 
 ## 반환
 호출자에게 짧게 보고: (작업) outcome, 변경 파일, 검증 결과, LTM 후보 / (리뷰) PASS·FAIL, 근거, 조치.

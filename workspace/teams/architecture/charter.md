@@ -16,25 +16,19 @@ status: draft
 아키텍처 철학에 맞게 기술 결정을 내리고 기록하며, 팀 간 인터페이스 계약과 구조적 일관성을 지킨다.
 
 - 생성 근거: 항상 — ADR 과 팀 간 계약의 단일 책임자가 필요하다
-- 프로젝트 적용: core. 20 §4 "API 계약 & ADR → architecture", "aidlc-run 스킬 변경 → architecture". 20 §8 ADR-001~011, 20 §5 파일 계약 F4·F5·F6·F7. OpenAPI 는 계약 책임(A)만 갖고 파일 쓰기는 backend 의 export 스크립트가 한다(40 §1.1) (40 §1)
+- 프로젝트 적용: 선택 아키텍처는 단일 프로세스 모놀리스(20§3, 가중합계 115점). ADR-001(스타일)·ADR-002(`predict(X)->y` 계약)·ADR-003(지표-문제유형 호환성 + KPI-02 산식)이 이미 Accepted 상태(20§8)이며, 신규 설계 쟁점이 생기면 이 문서 기준에 추가한다.
 
 ## 2. 책임 범위
 **소유 (Owns)**
 - workspace/project/20-architecture-analysis.md 유지보수
 - workspace/project/adr/
 - workspace/project/contracts/ (API·이벤트 스키마 계약)
-- `.claude/skills/aidlc-run/SKILL.md` (루프 경계 확인·대기 규칙, ml 미생성으로 프롬프트성 스킬 변경도 담당)
-- 파일 계약 스키마 (`.control.json`, `loop-status.json`, `claude-status.json`)
 
 **하지 않음 (Not owns)**
 - 개별 기능 구현
 - 운영 배포
 
-- 프로젝트 적용 (실제 디렉토리/컴포넌트):
-  - `workspace/project/20-architecture-analysis.md`
-  - `workspace/project/adr/` (ADR-001~011 및 후속)
-  - `workspace/project/contracts/` — `control.schema.json`, `loop-status.schema.json`, `claude-status.schema.json`, `loop-cli.md`, `sse-events.md`, `README.md`. **`openapi.json` 은 제외**(backend 가 export 스크립트로만 갱신, architecture 는 리뷰로 승인)
-  - `.claude/skills/aidlc-run/SKILL.md`
+- 프로젝트 적용 (실제 디렉토리/컴포넌트): `workspace/project/adr/ADR-001-single-process-monolith.md`, `ADR-002-model-invocation-contract.md`, `ADR-003-metric-problem-type-compatibility.md`. `workspace/project/contracts/` 는 생성하지 않는다 — 02§6 "OpenAPI 는 FastAPI 자동생성 문서 사용"이므로 계약 원천은 `20-architecture-analysis.md` §5 데이터 흐름 표와 런타임 `/docs` 다.
 
 ## 3. 산출물
 - ADR-xxx.md (Context/Decision/Alternatives/Consequences)
@@ -49,23 +43,21 @@ status: draft
 ## 5. 담당 요구사항
 | FR/NFR | 내용 | Phase |
 |--------|------|-------|
-| FR-005 | aidlc-run 스킬에 loop-start/loop-check/wait-resume/loop-end 규칙 추가(Bash timeout 600000, Windows python 안내) | P1 |
-| FR-008 | SSE 이벤트 계약(topic 목록, keep-alive) | P1(M1 topic) / P2(전 topic) |
-| CON-04 / 02 §6 | OpenAPI 계약 하위 호환성 판정, 봉투·에러 코드(ADR-011) | P1 |
-| NFR-004·005 | N/A 유지 확인 (확장용 컴포넌트·외부 호출 0개, QS-12·13) | 상시 |
+| FR-002 | 모델 호출 인터페이스 설계 (`predict(X)->y`, ADR-002) | P1 (완료) |
+| FR-003 | 지표-문제유형 호환성 전략 설계 (`METRIC_COMPATIBILITY`, ADR-003) | P1 (완료) |
+| NFR-002/003/004 | 가용성(SQLite 영속화)·보안(127.0.0.1 바인딩)·확장성(동시성 미제어) 결정 근거 | P1 (완료, 20§1 QS-2/3/4) |
 
 ## 6. 협업 인터페이스
-- 모든 개발 팀: 계약 변경 협의
-- security: 위협 모델
-- infra/ops: 배포 구조
+- backend: ADR-002/003 계약 구현 확인, 신규 계약 필요 시 ADR 선행
+- dba: 30§5 ERD/스키마 제안 승인(problem_type, Evaluation.status 필드)
+- security: R2(임의 코드 실행) 위협 모델 공유 (infra 팀 부재 — 해당 없음)
 
 | 방향 | 상대 팀 | 계약 | 위치 |
 |------|---------|------|------|
-| 제공 | backend | 파일 계약 스키마 3종, loop CLI exit code 계약 | `workspace/project/contracts/` |
-| 제공 | frontend, backend | API 봉투·에러 코드 규칙 | ADR-011 |
-| 사용 | backend | export 된 `openapi.json` (리뷰 대상) | `workspace/project/contracts/openapi.json` |
-| 사용 | backend | R-01·R-02 스파이크 결과 → ADR-004·003 확정 | STM 기록 |
-| 협의 | security | Host/Origin·`~/.claude` 접근 범위 위협 모델 | `workspace/project/security/threat-model.md` |
+| architecture → backend | `predict(X)->y` 계약 | ADR-002 | `workspace/project/adr/ADR-002-model-invocation-contract.md` |
+| architecture → backend | `METRIC_COMPATIBILITY` + `Evaluation.status` + KPI-02 산식 | ADR-003 | `workspace/project/adr/ADR-003-metric-problem-type-compatibility.md` |
+| architecture → dba | ERD 승인(Model.problem_type/problem_type_source, Evaluation.status) | 20§4 컴포넌트 표, 30§5.1 | `workspace/project/20-architecture-analysis.md` §4 |
+| architecture → security | R2(임의 Python 코드 실행) 리스크 근거 | 20§9 리스크 표 | `workspace/project/20-architecture-analysis.md` §9 |
 
 ## 7. 팀 Definition of Done
 - [ ] user/02 §10 공통 DoD
@@ -85,7 +77,6 @@ status: draft
   - [ ] 계약 하위 호환성이 지켜졌는가
 
 ## 10. 팀 표준 (user/02 구체화)
-- 언어/프레임워크: Markdown ADR(Context/Decision/Alternatives/Consequences), JSON Schema 2020-12, OpenAPI 3.1
-- 디렉토리: `workspace/project/adr/`, `workspace/project/contracts/`(openapi.json 제외), `workspace/project/20-architecture-analysis.md`, `.claude/skills/aidlc-run/SKILL.md`
-- 테스트 명령: `python3 aidlc/scripts/aidlc.py check project`, 계약 검증 `cd monitor/backend && python -m pytest tests/api` (backend 테스트로 확인), 레퍼런스 `python3 aidlc/scripts/openapi_docs.py` 재생성 결과 diff 확인
-- 규칙: 결정은 user/03 원칙 번호로 근거를 든다. 03 §9 ADR 필수 대상(새 의존성 등)은 ADR 없이 승인하지 않는다
+- 언어/프레임워크: 결정은 user/03 품질속성 가중치(개발속도7>유지보수성6>가용성5>확장성4>성능3>운영비용2>보안1, 20§2)로 채점해 ADR 에 기록
+- 디렉토리: `workspace/project/adr/`, `workspace/project/20-architecture-analysis.md`
+- 테스트 명령: 해당 없음(설계 문서). 신규 ADR 작성 시 20§2 후보 비교표 형식(최소 2개 후보, 가중합계)을 따른다.

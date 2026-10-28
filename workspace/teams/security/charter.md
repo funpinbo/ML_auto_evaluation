@@ -16,7 +16,7 @@ status: draft
 위협 모델링과 보안 검증으로 서비스와 데이터를 보호하고 규정 준수를 증명한다.
 
 - 생성 근거: 항상 — 보안·개인정보·규정 준수
-- 프로젝트 적용: core. 20 §4 "보안 정책 (허용 필드 목록, Host/Origin 정책, `~/.claude` 접근 범위, 의존성 점검) → security", NFR-003, 00 Q2 허용 필드 규칙, QS-05·06·07, 30 §7 "개인정보 규칙은 security 리뷰" (40 §1)
+- 프로젝트 적용: 보안 품질속성은 7위(최하위, 03§2)이고 인증/암호화는 불필요(03§8, NFR-003)하지만, NFR-003(localhost 전용 바인딩, QS-3), NFR-005(PII 없음 확인), R2(임의 Python 코드 실행 리스크, 20§9) 3가지는 명시적으로 확인·문서화가 필요한 항목이다. ml 팀이 없으므로(40§2) "임의 코드 실행"은 AI 안전성이 아니라 로컬 신뢰 전제(03§8 확장 적용)로 다룬다.
 
 ## 2. 책임 범위
 **소유 (Owns)**
@@ -24,23 +24,17 @@ status: draft
 - 보안 요구·체크리스트
 - 보안 스캔 정책 (SAST, 의존성, 시크릿, 컨테이너)
 - 개인정보 처리 흐름도와 보존 정책 검증
-- 개인정보 허용 필드 체크리스트 (구현 `privacy_filter.py` 는 backend 소유)
 
 **하지 않음 (Not owns)**
 - 기능 구현 (취약점은 담당 팀 Task 후보로)
 - 법률 자문
 
-- 프로젝트 적용 (실제 디렉토리/컴포넌트):
-  - `workspace/project/security/threat-model.md` (STRIDE: LAN 접속, DNS rebinding/CSRF, 본문 노출, `~/.claude` 인증 파일)
-  - `workspace/project/security/privacy.md` — **허용 필드 체크리스트**: `timestamp`, `requestId`, `message.model`, `message.usage` 4종, `isSidechain`, (디렉터리 해석 폴백 때만) `cwd`; `"usage":` 사전 필터; 응답·로그·캐시에 본문·경로·sessionId/requestId 원문 금지
-  - `workspace/project/security/security-checklist.md` — Host 허용 목록, POST Origin·`Content-Type: application/json`, CORS 미설정, 쓰기 경로 = `.control.json` 1개, `~/.claude` 읽기 = `projects/<enc>/**/*.jsonl` + `settings.json` statusLine 키
-  - **하지 않음:** 수집기·가드 코드(backend), 감사 도구 실행 자동화(cicd)
+- 프로젝트 적용 (실제 디렉토리/컴포넌트): `workspace/project/security/threat-model.md`, `workspace/project/security/privacy.md` (1일 프로젝트라 STRIDE 는 간략화해 R2/NFR-003/NFR-005 3가지에 집중).
 
 ## 3. 산출물
-- threat-model.md (STRIDE)
-- security-checklist.md
-- privacy.md (개인정보 항목·처리·보존·마스킹)
-- 취약점 리포트
+- threat-model.md: R2(임의 코드 실행 — 샌드박싱 없음, 03§8 로컬 신뢰 전제 확장 적용, 20§9), NFR-003(127.0.0.1 바인딩 코드 리뷰 확인)
+- privacy.md: NFR-005 "개인정보 없음(확인됨)" 근거 재확인(04§6), 별도 마스킹/전송 제한 불필요 명시
+- 취약점 리포트: 해당 없음(SAST/의존성 스캔 선택, 02§8) — 발견 시에만 작성
 
 ## 4. 입력 문서
 - workspace/user/01-project-overview.md §6
@@ -51,24 +45,17 @@ status: draft
 ## 5. 담당 요구사항
 | FR/NFR | 내용 | Phase |
 |--------|------|-------|
-| NFR-003 | 127.0.0.1 전용, 대화 본문 비접근·비저장 | P1 |
-| CON-07 / 00 Q2 | 허용 필드 복사 규칙, `~/.claude` 접근 범위 | P1 (FR-004 리뷰 게이트) |
-| QS-05 | Host/Origin 가드(BAD_HOST 400, FORBIDDEN_ORIGIN 403) | P1 |
-| QS-07 | 대시보드 쓰기 = `.control.json` 1개 | P1 |
-| 02 §8 | pip-audit/npm audit 결과 High 이상 0 | P1 말 / P2 말 |
+| NFR-003 | 로컬 전용 바인딩(`127.0.0.1`) 검증 | P1 |
+| NFR-005 | PII 없음 확인(이미 사용자 확인됨, 재검증 불필요) | 완료(변경 시 재확인) |
+| (20§9 R2) | 임의 코드 실행 리스크 문서화·사용자 경고 문구 확인 | P1 |
 
 ## 6. 협업 인터페이스
-- architecture: 보안 설계
-- cicd: 보안 스캔 게이트
-- data/ml: 개인정보·프롬프트 인젝션
-- infra: IAM·네트워크
+- architecture: 보안 관련 설계 결정(바인딩, 코드 실행 신뢰 전제) 공유
+- backend: 업로드/모델 로더 구현이 R2 경고 문구를 포함하는지 리뷰 (data/ml/infra 팀 부재 — 해당 없음, 40§2)
 
 | 방향 | 상대 팀 | 계약 | 위치 |
 |------|---------|------|------|
-| 제공 | backend | 허용 필드·Host/Origin·접근 범위 체크리스트 | `workspace/project/security/privacy.md`, `security-checklist.md` |
-| 제공 | qa | 본문 비노출 테스트 기준 | `workspace/project/security/privacy.md` |
-| 협의 | architecture | 위협 모델 ↔ ADR-002·003·011 | `workspace/project/security/threat-model.md` |
-| 사용 | cicd | 의존성 취약점 점검 결과 | `workspace/project/release/release.md` |
+| security → backend | NFR-003 바인딩 코드 리뷰 피드백 | 리뷰 코멘트(STM §7) | `workspace/memory/short-term.md` |
 
 ## 7. 팀 Definition of Done
 - [ ] user/02 §10 공통 DoD
@@ -88,7 +75,6 @@ status: draft
   - [ ] 최소 권한을 지켰는가
 
 ## 10. 팀 표준 (user/02 구체화)
-- 언어/프레임워크: Markdown 체크리스트, 검증 시 pytest·grep
+- 언어/프레임워크: 해당 없음(문서+코드 리뷰). 비밀값 관리 N/A(외부 API 키 없음, 02§8)
 - 디렉토리: `workspace/project/security/`
-- 테스트 명령: `cd monitor/backend && python -m pytest` (본문 비노출·Host/Origin 테스트 포함), `pip-audit -r monitor/backend/requirements.txt`, `cd monitor/frontend && npm audit`
-- 규칙: `~/.claude` 의 인증 파일은 리뷰 중에도 열지 않는다(02 §8). 실제 공격 코드를 저장소에 남기지 않는다
+- 테스트 명령: 코드 리뷰로 `uvicorn.run(..., host="127.0.0.1", ...)` 고정 여부 확인(수동, QS-3). 의존성 취약점 점검은 선택(02§8) — 실행 시 `pip list --outdated` 수동 확인

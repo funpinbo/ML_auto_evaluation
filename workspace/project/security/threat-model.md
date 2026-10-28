@@ -1,88 +1,89 @@
 ---
-doc: threat-model
+doc: security-threat-model
 layer: project
 owner: security
-sources: [00 Q2/C2, 20 §4, ADR-002, ADR-003, ADR-011, contracts/README §2·§3, NFR-003, QS-05·06·07, LTM D-02·D-08·D-13]
 status: draft
+source: user/01-project-overview.md§6, user/02-development-standards.md§8·§11, user/03-architecture-philosophy.md§2·§8, workspace/project/20-architecture-analysis.md§4·§6·§9, workspace/project/adr/ADR-002-model-invocation-contract.md, workspace/teams/security/charter.md
 ---
-# 위협 모델 (STRIDE) — AI-DLC Monitor
+# 위협 모델 — ML_miniops
 
-범위: 로컬 대시보드(FastAPI, 127.0.0.1) + statusline 스크립트 + `.control.json` 쓰기. 실제 공격 코드는 이 문서에 두지 않는다(개념 수준 기술).
-검증 열의 ID 는 privacy.md 의 항목(P-/N-/W-/D-/T-)이다. 정책 상세(허용 필드, Host/Origin, 접근 범위)는 `privacy.md` 가 단일 기준이다. 이 문서는 "왜"와 "어떤 통제가 어떤 위협을 막는가"를 매핑한다.
+> security 팀 소유(charter §3). 보안 품질속성은 7위(최하위, 03§2)이고 인증/암호화는 명시적으로 불필요(03§8, NFR-003)하다.
+> 전체 STRIDE 를 정식으로 적용하지 않고(과설계 금지, 03 원칙 1) **NFR-003(로컬 전용 바인딩) / NFR-005(개인정보 없음) / R2(임의 코드 실행, 20§9)** 3가지에만 집중한다.
+> NFR-005 상세 체크리스트는 `workspace/project/security/privacy.md` 로 분리한다.
 
-## 1. 자산과 신뢰 경계
-| ID | 자산 | 민감도 | 위치 |
-|----|------|--------|------|
-| A-1 | 대화 본문 (JSONL 의 `message.content` 등) | 높음 | `~/.claude/projects/<enc>/**/*.jsonl` (usage 줄과 같은 줄) |
-| A-2 | Claude 인증 파일·settings 내 기타 키 | 높음 | `~/.claude/` (읽기 대상 아님) |
-| A-3 | 파일 경로(홈·사용자명 포함), `transcript_dir_name`, sessionId/requestId 원문 | 중간 | JSONL, `claude-status.json` |
-| A-4 | 루프 제어 상태 (`.control.json`) | 중간(무결성) | `workspace/memory/.control.json` |
-| A-5 | 사용량 집계(토큰 수·모델명) | 낮음 | 프로세스 메모리 |
+## 0. 범위가 아닌 것
+| 항목 | 상태 | 근거 |
+|------|------|------|
+| 인증/인가 | N/A | NFR-003, 02§6 "인증/인가 없음" |
+| 전송/저장 암호화 | N/A | 03§8 로컬 전용 전제 |
+| 샌드박싱/정적분석(업로드 스크립트) | N/A, 설계상 명시적 제외 | 20§9 R2, ADR-002, 과설계 금지 |
+| 의존성 취약점 스캔(SAST 등) | 선택, 이번 Task 범위 아님 | 02§8 "선택" |
+| 비밀값 하드코딩 검사 | 해당 없음(외부 API 키/비밀값 자체가 없음) | 02§8 |
 
-신뢰 경계: (1) 브라우저 ↔ backend (127.0.0.1 루프백), (2) backend ↔ `~/.claude` 읽기, (3) backend ↔ `workspace/memory/` 쓰기, (4) Claude Code ↔ statusline 스크립트(stdin), (5) 사용자 PC 의 다른 웹 페이지(비신뢰) ↔ 로컬 포트.
+## 1. NFR-003 — 로컬 전용 바인딩(`127.0.0.1`)
 
-## 2. 위협 목록 (STRIDE)
-위험도: 가능성·영향 H/M/L. 잔여 = 통제 적용 후.
+### 1.1 요구사항
+- 서버는 `127.0.0.1` 에만 바인딩하고 LAN/외부 네트워크로 노출하지 않는다(user/01§6 NFR-003, QS-3).
+- 호스트를 바꾸는 옵션 자체를 두지 않는다(20§6: "포트만 환경변수/인자로 조정 가능").
+- Agent 가 사람 승인 없이 외부 노출 설정을 변경하는 것은 금지된다(02§11).
 
-### 2.1 LAN 접속 (외부 호스트가 대시보드에 접근)
-| STRIDE | 위협 | 통제 | 잔여 | 검증 (privacy.md) |
-|--------|------|------|------|-------------------|
-| I (정보 노출) | 0.0.0.0 바인딩으로 같은 LAN 의 타 기기가 사용량·프로젝트 정보 조회 | 바인딩은 `127.0.0.1` 고정, 주소를 바꾸는 옵션·환경변수 0개(NFR-003) | L | N-01 |
-| S/T | LAN 기기가 `POST /control/pause` 로 루프 조작 | 위와 동일(도달 불가) + Host/Origin 가드(깊은 방어) | L | N-01, N-03·N-04 |
-| E | `run.py` 에 `--host` 류 옵션이 추가되어 노출 확대 | 옵션 부재를 리뷰 항목화, 구현 변경 시 security 리뷰 | L | N-01 |
+### 1.2 코드 리뷰 결과 (수동 확인, 이 Task 시점)
+- 저장소 루트 `run.py`(이 저장소 자체의 **AI-DLC Monitor** 런처, ML_miniops 와는 별개 — LTM I-08): `BIND_HOST = "127.0.0.1"` 상수로 고정(L36), `port_free`/`probe_health`/`server_command` 등 모든 바인딩·헬스체크 경로가 이 상수만 사용. 호스트를 바꾸는 CLI 인자/환경변수가 전혀 없음(`argparse` 에 `--port` 만 존재, L379-384). → **의도된 고정 바인딩 패턴 확인.**
+- `monitor/backend/app/__main__.py`: `uvicorn.run(create_app(settings), host=BIND_HOST, port=settings.port, ...)` 호출 확인(L23-28), `BIND_HOST` 는 `app/config.py` 의 `BIND_HOST = "127.0.0.1"` 상수(L16)를 그대로 import. → 실제 uvicorn 바인딩 코드에서도 `127.0.0.1` 하드코딩 확인.
+- **ML_miniops 자신의 런처**(20§4 "실행 런처(`run.py`)", 20§6 `uvicorn.run(app, host="127.0.0.1", port=8000)` 설계)는 이 Task 시점에 **아직 구현되지 않음** — 저장소 루트 `app/`(ML_miniops 스캐폴드, D-08)에는 `config.py`/`__main__.py`/`uvicorn.run` 호출이 없고, `run.py` 가 구동하는 대상은 ML_miniops 가 아니라 AI-DLC Monitor(`monitor/backend/app`) 이다(LTM I-08, 경로 충돌 미해소).
 
-### 2.2 DNS rebinding / CSRF (브라우저가 공격 경로)
-| STRIDE | 위협 | 통제 | 잔여 | 검증 |
-|--------|------|------|------|------|
-| S/I | 공격자 도메인이 127.0.0.1 로 재바인딩되어 동일 출처 정책을 우회, 응답 읽기(같은 PC 의 다른 로컬 포트로 향한 Host 혼동 포함) | 자체 `HostGuardMiddleware`(가장 바깥, ADR-011 §4·D-18): Host 헤더 정확히 1개 + 소문자화 후 `127.0.0.1:<port>`/`localhost:<port>` 정확 일치(`<port>`=`settings.port`)가 아니면 400 `BAD_HOST`, GET·POST·SSE·정적 dist 전부. 케이스는 privacy.md §5.1 | L | N-02 |
-| T/E | 다른 사이트의 form/fetch 가 `POST /control/pause|resume` 호출 | POST 는 미디어 타입이 정확히 `application/json`(누락·form 계열·접두 함정 거부, 쓰기 전), Origin 이 있으면 허용 출처와 일치해야 함, 아니면 403 `FORBIDDEN_ORIGIN`(415 아님, ADR-011 §5·D-14). 케이스는 privacy.md §5.2 | L | N-03·N-04 |
-| I | CORS 설정 실수로 타 출처 응답 읽기 허용 | CORS 미들웨어 미사용, `Access-Control-*` 헤더 0 | L | N-05 |
-| T | Origin 헤더 없는 비브라우저 클라이언트 POST | 루프백 도달 가능한 로컬 프로세스는 이미 같은 사용자 권한 → 수용(ADR-011: 토큰 인증 기각). 쓰기 대상이 `.control.json` 1개이고 Pydantic 검증된 값만 쓰므로 영향 제한 | L (수용) | N-03, N-07 |
-| I/T | 응답 내용 스니핑·프레임 삽입 | `nosniff`, `Referrer-Policy: no-referrer`, CSP(`default-src 'self'` …) | L | N-06 |
+### 1.3 결론
+- 설계 문서(20§4/§6, QS-3) 수준에서는 `127.0.0.1` 고정 바인딩이 명확히 명시돼 있고, 같은 저장소 안에 이미 존재하는 동일 패턴(AI-DLC Monitor 런처)은 실제 코드로도 고정 바인딩·호스트 변경 옵션 없음을 확인했다 — **PASS(설계 수준)**.
+- ML_miniops 자체의 바인딩 코드는 아직 존재하지 않아 **코드 리뷰로 실측 검증은 불가능**(검증 대상 코드 없음). I-08(run.py 경로 충돌)이 해소되고 backend 가 런처를 구현한 뒤 이 섹션을 재검증해야 한다.
+- Agent는 바인딩 주소를 바꾸는 어떤 변경도 수행하지 않았다(02§11 — 사람 승인 필요 영역, 손대지 않음).
 
-### 2.3 대화 본문 노출 (NFR-003, Q2)
-| STRIDE | 위협 | 통제 | 잔여 | 검증 |
-|--------|------|------|------|------|
-| I | usage 줄에 본문이 같이 있어 파싱 시 메모리·응답·로그·캐시로 유입 | `"usage":` 없는 줄은 파싱 전 폐기, 허용 필드만 새 dataclass 로 복사 후 원본 dict 즉시 폐기, `message.content` 접근 금지 | M | P-01~P-08 |
-| I | 예외 메시지·로그에 줄 내용(json 파싱 오류의 원문 일부) 포함 | 파싱 실패는 건수만 WARN, 예외는 종류만 기록, `INTERNAL_ERROR` 메시지에 경로·내용 미포함 | M | P-09, P-10 |
-| I | 응답/SSE 에 sessionId·requestId·경로 원문 포함, 중복 제거용 requestId dict 가 응답으로 새어나감 | requestId 는 메모리 내부 키로만 사용, 응답 모델에 필드 없음(스키마 allow-list) | M | P-09, P-11 |
-| I | 테스트가 실제 `~/.claude` 기록을 사용해 본문이 CI 로그·fixture 로 유입 | 합성 fixture 만 사용, 실제 기록 금지(02 §5) | L | P-30·§7 |
-| I | 폴백 해석에서 `cwd` 가 캐시·응답으로 유출 | `cwd` 는 폴백 때만 복사, 비교 후 폐기, 해석 결과는 디렉터리 선택에만 사용 | L | P-05, P-09 |
-| I | 비교적 흔한 우회: 사전 필터가 있어도 본문 안에 `"usage":` 문자열이 들어 있는 줄은 통과 | 통과 후에도 허용 필드만 복사하므로 본문은 유입되지 않음(사전 필터는 성능 목적, 보안 경계는 allow-list 복사) | L | P-03 |
+### 1.4 재검증 조건 (Task 후보)
+- `[architecture]` I-08(run.py 경로 충돌) 해소 필요 — 이미 LTM/ops runbooks.md §5 에 기록된 미해결 Task.
+- `[backend]` ML_miniops 런처(`uvicorn.run(..., host="127.0.0.1", ...)`) 구현 완료 후 `[security]` 가 실제 코드로 본 섹션을 재검증해야 한다.
 
-### 2.4 `~/.claude` 인증 파일 및 경로 이탈
-| STRIDE | 위협 | 통제 | 잔여 | 검증 |
-|--------|------|------|------|------|
-| I | `~/.claude` 아래 인증·설정 파일을 읽거나 노출 | 읽기 허용은 `projects/<enc>/**/*.jsonl` 과 `settings.json` 의 `statusLine` 키뿐. 그 외 파일 open 금지, settings 의 다른 키는 로그·응답·캐시 금지 | M | P-21~P-24 |
-| T/E | statusline 스냅샷의 `transcript_dir_name` 변조(`..`, 절대경로, 구분자)로 `~/.claude` 밖/타 디렉터리 읽기 | D-13 정규식 재검증 + `resolve()` 결과가 `~/.claude/projects/` 직속 하위인지 확인. 실패 시 힌트 무시·폴백, 값 없이 코드만 기록 | M | P-25~P-28 |
-| T | `projects/` 아래 symlink 가 밖(예: `~/.claude` 의 인증 파일, 홈)을 가리킴 | `resolve()` 후 경계 검사(직속 하위), JSONL 탐색 시 symlink 로 경계를 벗어나는 파일은 열지 않음(`resolve()` 결과가 대상 디렉터리 하위가 아니면 건너뜀) | M | P-28, P-29 |
-| I | 체이닝이 `settings.json` 전체를 읽어 로그/스냅샷에 기록 | `statusLine.command` 만 추출, 다른 키는 보지 않음, 명령 문자열 자체도 로그 금지 | L | P-23, P-24 |
-| E | 체이닝 명령 실행(셸)이 임의 명령 실행 경로 | 명령은 사용자 본인의 기존 설정(사용자 권한), 재귀 방지·timeout 2 s. 신규 입력 아님 → 수용. 요청에서 받은 값은 절대 셸로 넘기지 않음 | L (수용) | P-30 |
-| I | 스냅샷에 `transcript_path` 원문·`cwd`·session_id 원문 저장 | 스키마 `additionalProperties: false`, `session_hash`(sha256 앞 12자)만 | L | P-31 |
+### 1.5 재확인 (T-019, 2026-10-27)
+- 저장소 상태를 다시 읽어 §1.2/§1.3 의 결론이 여전히 유효한지 확인했다: 저장소 루트 `app/`(ML_miniops 스캐폴드)에는 여전히 `run.py`/`config.py`/`uvicorn.run` 호출이 없다(`app/api/__init__.py`, `app/web/__init__.py` 만 존재, `app/web/{static,templates}` 는 `.gitkeep` 뿐). `tasks.md` 의 `T-033`(architecture, I-08 경로 충돌 해소)과 ML_miniops 런처 구현을 맡을 backend Task 는 모두 아직 미착수(미생성)이다.
+- 저장소 루트 `run.py` 는 여전히 AI-DLC Monitor 런처(포트 8765, `monitor/backend/app`)이며 `BIND_HOST = "127.0.0.1"` 고정, 호스트 변경 옵션 없음(§1.2 와 동일, 재확인됨).
+- **결론: §1.3 의 "설계 문서 수준 PASS, 실측 검증 대상 코드 없음"이 그대로 유지된다.** T-019 의 DoD("run.py 코드 리뷰로 바인딩 주소 확인")는 ML_miniops 런처 코드가 존재하지 않아 문자 그대로 충족할 수 없다 — 이는 이미 T-008 시점(LTM I-10)에 예견된 상황이고 이번 재확인으로도 바뀌지 않았다. `T-034`(deps: T-033, T-012, T-019, T-020)가 실측 재검증을 맡도록 이미 설계돼 있으므로, 이 섹션의 실측 검증은 그 때까지 보류한다(02§5 — 실행하지 않은 검증을 통과로 쓰지 않는다).
 
-### 2.5 쓰기 경로와 무결성 / 가용성
-| STRIDE | 위협 | 통제 | 잔여 | 검증 |
-|--------|------|------|------|------|
-| T/E | 대시보드가 다른 파일(`loop-status.json`, `claude-status.json`, memory/tasks 등)에 씀 | 쓰기 경로는 `workspace/memory/.control.json` 1개(QS-07), 파일당 쓰기 주체 1개 | L | W-01 |
-| T | 요청에서 받은 경로·임의 문자열로 쓰기 대상 변경 | 요청에 파일 경로 파라미터 없음(ADR-011 §3), 입력은 enum/범위 Pydantic | L | N-07 |
-| T | 쓰기 중 중단으로 제어 파일 깨짐 | 임시 파일 → `os.replace` 원자적 교체 | L | W-02 |
-| D | 조작된 JSONL/스냅샷(거대 줄, 깨진 JSON)으로 서버 다운·메모리 폭주 | 파싱 실패는 건수만 기록하고 계속, 패널 단위 오류 격리(NFR-002), 30일 초과 파일 건너뜀, SSE 연결 상한 503 `TOO_MANY_STREAMS` | M | 백엔드 테스트(qa) |
-| D | SSE 연결 고갈 | 연결 상한(D-12) | L | qa |
-| R (부인) | 누가 일시정지/재개했는지 부인 | 단일 사용자 로컬 도구 → 범위 밖(수용). `.control.json` 에 요청 시각만 기록 | 수용 | - |
+## 2. R2 — 업로드된 임의 Python 코드 실행 (샌드박싱 없음, 20§9)
 
-### 2.6 공급망·의존성
-| STRIDE | 위협 | 통제 | 검증 |
-|--------|------|------|------|
-| T | 취약한 Python/npm 의존성 | `pip-audit -r monitor/backend/requirements.txt`, `cd monitor/frontend && npm audit` High 이상 0 (02 §8, P1 말·P2 말). 의존성 추가는 ADR-006·007 범위로 제한 | D-01·D-02 |
-| T | 커밋된 `dist` 에 악성/비밀 포함 | `.build-meta.json` 신선도, 비밀값 하드코딩 0(grep) | D-03 |
-| I | 런타임 파일이 git 에 올라감 | `.gitignore`: `workspace/memory/.control.json`, `workspace/memory/.monitor/` | W-04 |
+### 2.1 리스크 정의
+사용자가 업로드한 `.py` 모델 스크립트를 `importlib` 로 그대로 import(=실행)한다. 샌드박싱·정적분석이 전혀 없다 — 일반적으로는 임의 코드 실행(RCE) 취약점이지만, 이 프로젝트는 **의도된 예외**로 수용한다.
 
-## 3. 수용한 잔여 위험
-1. 같은 사용자 권한의 로컬 프로세스가 Origin 없이 `POST /control/*` 를 호출하는 것 (인증 없음, 02 §6, ADR-011 대안 기각).
-2. 사용자 본인 `settings.json` 의 statusLine 명령 실행(체이닝).
-3. 단일 사용자 도구이므로 부인 방지·감사 로그 없음.
+### 2.2 수용 근거 (예외 사유, 그대로 유지)
+- 03§8: "로컬 전용이 핵심 원칙, 그 외 인증/암호화 불필요" — 이 로컬 신뢰 전제를 임의 코드 실행에도 그대로 확장 적용한다(20§9 R2, ADR-002 "보안 관련 예외 사유" 명시).
+- 전제: **본인이 작성/신뢰하는 스크립트만 업로드**한다(NFR-003 로컬 전용 + 01 NFR-003). ml 팀이 없어(40§2) AI 안전성 관점이 아니라 이 로컬 신뢰 전제로만 다룬다(security charter §1).
+- 샌드박싱/코드 정적분석은 범위 밖으로 명시 제외(원칙 1 과설계 금지, 20§9).
 
-## 4. 보류·열린 항목
-- 구현 전이므로 모든 통제는 "요구" 상태. 구현 후 리뷰에서 P-항목을 실제 테스트/grep 으로 확인해야 한다.
-- 폴백 `cwd` 해석은 홈 디렉터리 경로를 일시적으로 메모리에 올린다. 비교 후 폐기를 코드 리뷰로 확인(P-05).
-- Windows/macOS 에서의 symlink·대소문자 경로 비교는 리허설 시 재확인.
+### 2.3 경고 문구 요구사항 확인
+- 설계/요구사항 문서에는 경고 문구 요건이 이미 명시돼 있다:
+  - 20§9 R2: "문서에 '본인이 작성/신뢰하는 스크립트만 업로드' 경고 문구"
+  - ADR-002: "본인이 작성/신뢰하는 스크립트만 업로드한다는 가정 하에 허용되는 리스크로 명시적으로 수용"
+  - `workspace/project/stories/FR-002.md` L68: 동일 전제를 Out-of-scope 근거로 재인용
+- **실제 구현 확인(이 Task 시점)**: 업로드 화면(`app/web/templates`, `app/web/static`)은 아직 플레이스홀더(`.gitkeep`)뿐이고, tasks.md 기준 `T-012 [frontend] 업로드 화면 구현`이 아직 미완료(`[ ]`)다. 따라서 경고 문구가 실제 업로드 폼이나 사용자 문서에 노출되는지는 **코드/문서가 존재하지 않아 검증 불가**(실행하지 않은 검증을 통과로 쓰지 않는다, 02§5).
+
+### 2.4 결론 및 재검증 조건 (Task 후보)
+- 설계 문서 수준에서는 경고 문구 요건이 일관되게 반영돼 있음 — **PASS(설계 수준)**.
+- `[frontend]` T-012(업로드 화면 구현) DoD 에 "본인이 작성/신뢰하는 스크립트만 업로드" 경고 문구 노출을 포함해야 한다.
+- `[product]` 사용자 가이드/문서(T-020 등 P1 문서 갱신)에도 동일 경고 문구를 포함해야 한다.
+- 두 Task 완료 후 `[security]` 가 리뷰 모드로 실제 화면/문서에 경고 문구가 노출되는지 재확인 필요.
+
+## 3. NFR-005 — 개인정보
+`workspace/project/security/privacy.md` 참고. 결론만 요약: 04§6 "개인정보 포함 여부: 아니오(확인됨)" 이 이 Task 시점까지 유지되며, 업로드 대상(모델 스크립트 + CSV)이 변경되지 않았으므로 재검증 불필요.
+
+## 4. STRIDE 간략 매핑 (참고용, 상세 분석 생략)
+| STRIDE | 이 프로젝트에서의 취급 | 근거 |
+|--------|------------------------|------|
+| Spoofing | N/A — 인증 없음(의도) | NFR-003 |
+| Tampering | 수용된 리스크 — 업로드 스크립트/CSV 변조는 로컬 신뢰 전제로 범위 밖 | 03§8, 20§9 R2 |
+| Repudiation | N/A — 단일 사용자, 감사로그 요구 없음 | 03§7 |
+| Information Disclosure | 낮음 — 외부 노출 없음(§1), PII 없음(§3) | NFR-003, NFR-005 |
+| Denial of Service | 낮음 — 단일 사용자 로컬 전용, 공격 표면 사실상 없음 | NFR-004 |
+| Elevation of Privilege | 수용된 리스크 — R2(§2)와 동일 범주, 별도 권한 상승 경로 없음(프로세스 권한=사용자 권한) | 20§9 R2 |
+
+## 5. 결론
+- NFR-003: 설계 수준 PASS, 실측은 ML_miniops 런처 구현 후 재검증(§1.4) — T-019(2026-10-27) 재확인 결과도 동일(§1.5), T-034 로 이전.
+- R2: 설계 수준 PASS, 경고 문구의 실제 노출은 T-012/T-020 구현 후 재검증(§2.4).
+- NFR-005: PASS, 변경 없음 확인(privacy.md).
+- 발견된 신규 보안 결함 없음. High 이상 취약점 0, 비밀값 하드코딩 0(해당 항목 자체가 없음, 02§8).

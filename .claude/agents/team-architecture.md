@@ -31,11 +31,11 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 ## 팀 특화 지침
 - 결정은 반드시 user/03 원칙 번호를 근거로 든다.
 - 구현보다 경계를 지키는 데 집중한다.
-- ADR-001~011 이 기준이다. 새 의존성·컴포넌트·파일 계약 변경은 ADR(user/03 §9) 없이 승인하지 않는다.
-- `workspace/project/contracts/` 에서 `openapi.json` 은 직접 쓰지 않는다 — backend 가 `monitor/backend/scripts/export_openapi.py` 로 갱신, architecture 는 리뷰로 하위 호환성 판정.
-- 파일 계약: `.control.json`(쓰기 = 대시보드만), `loop-status.json`(쓰기 = CLI 만), `claude-status.json`(쓰기 = status line). 파일별 단일 작성자 원칙(R-10)을 깨는 변경은 FAIL.
-- `.claude/skills/aidlc-run/SKILL.md` 수정 시: loop-start N → 사이클마다 loop-check → exit 10 이면 wait-resume 반복(Bash timeout 600000) → loop-end. Windows 는 `python3` 없으면 `python`/`py -3` 안내(R-09).
-- R-01(같은 세션 대기 실효성) 스파이크 결과가 나오면 ADR-004 를 확정/대안 B 로 갱신한다.
+- 프로젝트: ML_miniops — 단일 프로세스 모놀리스(FastAPI, 동기 REST, SQLite, in-process 모델 로더/평가 실행기, 20§3). ADR-001(스타일)·ADR-002(`predict(X)->y` 계약)·ADR-003(지표-문제유형 호환성+KPI-02 산식)이 기준이다(`workspace/project/adr/`). 새 컴포넌트·의존성·계약 변경은 ADR 없이 승인하지 않는다.
+- `workspace/project/contracts/` 는 만들지 않는다 — 02§6 "OpenAPI 는 FastAPI 자동생성 문서 사용"이므로 계약 원천은 `20-architecture-analysis.md` §5 와 런타임 `/docs` 다. backend 가 라우터를 바꾸면 §5 표도 같은 Task 안에서 갱신하는지 리뷰한다.
+- 03§4 금지 기술(클라우드 매니지드 서비스, 별도 메시지 브로커/분산 시스템)을 위반하는 설계는 점수와 무관하게 FAIL(20§2 후보 C 처리 사례 참고).
+- 핵심 리스크 추적: R1(predict 계약 미준수 — QS-6 fail fast), R2(샌드박싱 없는 임의 코드 실행 — 03§8 로컬 신뢰 전제 확장), R3(일정 리스크로 P2 기능 지연), R6(CSV 라벨 컬럼 컨벤션). 새 리스크가 발견되면 20§9 표에 추가한다.
+- 품질속성 가중치(개발속도7>유지보수성6>가용성5>확장성4>성능3>운영비용2>보안1, 20§2)로 후보를 채점한다 — 과설계(03 원칙1)를 가장 조심한다.
 
 ## 반환
 호출자에게 짧게 보고: (작업) outcome, 변경 파일, 검증 결과, LTM 후보 / (리뷰) PASS·FAIL, 근거, 조치.

@@ -1,0 +1,94 @@
+# ML_miniops app(app/) 실행/테스트 의존성 — 전용 venv 에만 설치한다 (02§11: 전역/시스템 Python 환경 설치 금지).
+# cicd 소유 (T-030, deps: T-005). 평가 엔진(20-architecture-analysis.md §4, FR-002/FR-004)과
+# tests/fixtures/(T-005, qa — predict(X)->y 계약 ADR-002)가 전제하는 pandas/scikit-learn/pytest 를 고정한다.
+# monitor/backend/requirements.txt(별도 앱 — AI-DLC Monitor 메타 도구)와는 무관한 별개 파일이다.
+#
+# venv 구성 절차 (저장소 루트에서 실행, .venv/ 는 .gitignore 처리되어 있어 커밋되지 않음):
+#   Windows (cmd/PowerShell) :
+#     python -m venv .venv
+#     set PYTHONUTF8=1 && .venv\Scripts\python.exe -m pip install -r requirements.txt
+#   macOS/Linux :
+#     python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
+#   테스트 실행 : <venv>/python -m pytest tests/ -v   (ruff 게이트는 cicd charter §10: `ruff format --check . && ruff check .`)
+#   venv 가 망가지면 디렉터리를 지우고 위 절차를 다시 실행한다. pip 캐시/전역 site-packages 에는 쓰지 않는다.
+#   주의(Windows): 이 파일의 한글 주석에는 인코딩 선언이 없어, 로케일이 cp949 인 콘솔에서는 PYTHONUTF8 없이
+#   설치하면 pip 가 `UnicodeDecodeError`로 실패한다(run.py 의 _pip_env() 와 같은 원인) — 위처럼 PYTHONUTF8=1 을
+#   반드시 함께 설정한다. 2026-10-27 T-030 검증 시 이 환경변수 없이 실제로 재현·확인함.
+#
+# 2026-10-27 T-030: 깨끗한 venv(Windows, Python 3.12.3)에 pandas+scikit-learn+pytest 설치 후 pip freeze 로
+# 전이 의존성까지 모두 == 고정. 같은 venv 에서 pytest 로 tests/fixtures/(T-005) 6건
+# (classification/regression/bad_single_column csv 로드, dummy_classifier/dummy_regressor predict(X)->y 실행,
+# no_predict 네거티브 계약 확인) 전부 로드·실행됨을 검증(PASSED 6/6) — 이 조합으로 이후 pytest 기반 리뷰(T-009+)가
+# 더 이상 "실행 불가"로 blocked 되지 않는다(LTM I-05 해소).
+#
+# 2026-10-27 T-006: ruff(린트/포맷터, cicd charter §7/§10 로컬 게이트)를 같은 venv 에 추가. 전이 의존성 없음
+# (pip freeze 로 확인). 게이트 명령은 `app`/`tests` 로 경로를 명시해 실행한다(예: `ruff check app tests`,
+# `pytest tests`) — 저장소에는 ML_miniops(이 파일 대상) 외에 무관한 별도 프로젝트(monitor/, aidlc/)가 공존해서,
+# 경로 없이 `.`(저장소 루트) 로 실행하면 ruff 가 그 프로젝트 파일까지 검사하고 pytest 는 monitor/backend/tests 를
+# 수집하다 미설치 의존성(fastapi/pydantic/jsonschema 등)으로 22건 수집 오류를 내며 전부 실패한다(실측 재현).
+#
+# PyTorch(선택, D-11/ADR-002 Decision #3): framework 는 메타데이터일 뿐이고 평가 엔진이 프레임워크별로 분기하지
+# 않아, 현재 fixtures(scikit-learn 기반)만으로 충분하다 — 기본 설치하지 않는다. 실제 torch 기반 사용자 스크립트를
+# 평가해야 하는 시점이 오면 아래 줄의 주석을 해제하고 당시 최신 안정판으로 버전을 재확인해 고정한다
+# (참고치: PyTorch 2.14.1, 2026-09-30 GA — 20-architecture-analysis.md §4).
+# torch==2.14.1
+#
+# 2026-10-27 T-010(backend, FR-002 POST /models): fastapi/uvicorn/httpx/python-multipart 추가.
+# 02§1·20§4·20§7 이 요구하는 FastAPI+Uvicorn 런타임이 이 Task 에서 처음 필요해졌다(이전 Task들은
+# Repository/fixture 수준이라 불필요했음). 02§9(새 라이브러리 도입에 특별한 승인 절차 없음)에 따라
+# 이 파일(cicd 소유 산출물)을 backend 가 직접 갱신했다 — cicd charter §7 DoD("requirements.txt
+# 변경 시 깨끗한 venv 재설치로 재현되는가")에 따른 재검증이 필요하므로 Task 후보로 남긴다(STM §5).
+# httpx 는 FastAPI `TestClient`(fastapi.testclient)가 내부적으로 사용하는 테스트 전용 의존성이고,
+# python-multipart 는 FastAPI 가 `UploadFile`/`Form` 멀티파트 바디를 파싱하는 데 필요하다.
+# 같은 .venv 에서 pytest 로 tests/integration/test_uploads.py 4건 + tests/test_repository.py
+# 26건 전체(30건) PASSED 로 검증(`check_same_thread=False` 를 repository.get_connection() 에
+# 추가해야 FastAPI 스레드풀 실행 모델에서 sqlite3 커넥션을 재사용할 수 있음, NFR-004 로 실제
+# 동시 접근 경쟁은 없다고 전제).
+#
+# 2026-10-28 T-012(frontend, FR-002 업로드 화면): jinja2 추가. `fastapi.templating.Jinja2Templates`
+# 가 내부적으로 jinja2 를 요구하지만 fastapi 패키지 자체는 이를 강제로 설치하지 않는다
+# (02§9 승인 불요 — D-19 선례와 동일하게 소비 Task 가 직접 추가). 같은 격리 venv 에서
+# `import app.web` 으로 Jinja2Templates/StaticFiles 가 공유 `app` 인스턴스(app.api.app)에
+# 자가 등록되는지, TestClient 로 `GET /` 렌더링 + 실제 POST /models, /datasets 업로드가
+# 되는지 확인(검증 결과는 STM-0020/T-012 참고). markupsafe 는 jinja2 의 전이 의존성.
+
+pandas==3.1.0
+scikit-learn==1.9.1
+pytest==9.1.1
+ruff==0.17.2
+fastapi==0.162.0
+uvicorn==0.54.0
+httpx==0.28.1
+python-multipart==0.0.32
+jinja2==3.1.6
+
+# --- 위 설치 시 pip 가 함께 설치하는 전이 의존성 (pip freeze 로 고정, 재현성 보장) ---
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+certifi==2026.10.23
+click==8.5.0
+cloudpickle==3.1.2
+colorama==0.4.6 ; sys_platform == "win32"
+h11==0.16.0
+httpcore==1.0.9
+idna==3.20
+iniconfig==2.3.1
+joblib==1.6.0
+MarkupSafe==3.0.4
+narwhals==2.27.1
+numpy==2.5.4
+opentelemetry-api==1.45.1
+packaging==26.3
+pluggy==1.7.0
+pydantic==2.14.1
+pydantic_core==2.50.1
+Pygments==2.21.0
+python-dateutil==3.0.0
+scipy==1.18.1
+six==1.17.0
+starlette==1.10.0
+threadpoolctl==3.7.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+tzdata==2026.5

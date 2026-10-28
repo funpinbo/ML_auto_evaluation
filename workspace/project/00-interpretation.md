@@ -3,7 +3,7 @@ doc: interpretation
 layer: project
 author: doc-interpreter
 status: draft
-source_versions: [01@0.1, 02@0.1, 03@0.1, 04@0.1]
+source_versions: [01@0.3, 02@0.2, 03@0.2, 04@0.3]
 ---
 # 00. 요구 해석서 (User Layer → Project Layer)
 
@@ -11,109 +11,90 @@ source_versions: [01@0.1, 02@0.1, 03@0.1, 04@0.1]
 > 이후 모든 분석 Agent 는 User 문서 대신 **이 문서를 1차 입력**으로 씁니다. 사용자는 여기서 오해를 바로잡습니다.
 
 ## 1. 한 문단 요약
-AI-DLC Monitor 는 VSCode + Claude Code 로 AI-DLC 를 혼자 운영하는 개발자를 위한 **로컬 전용(127.0.0.1) Grafana 스타일 대시보드**다. FastAPI + uvicorn 단일 프로세스가 `/api/v1` REST·SSE API 와 저장소에 포함된 Vue 3 빌드(dist)를 함께 서빙하고, `workspace/` 파일(frontmatter)과 `aidlc.py check/status` 출력, Claude Code 세션 기록(JSONL 의 usage 필드만)과 status line 스냅샷(JSON)을 **읽기만** 해서 파이프라인 단계·Plan/Task 진행률·메모리/cascade·팀·사용량(5시간/7일 한도, 토큰, 비용)을 한 화면에 보여준다. 대시보드가 쓰는 파일은 루프 제어 파일 하나뿐이며, 일시정지하면 `/aidlc-run N` 은 현재 Task(cascade 포함)를 마친 뒤 **같은 세션에서 대기**하다가 대시보드에서 재개하면 남은 반복을 자동으로 이어간다(01 §10 결정). 설치는 `run.bat`/`run.sh`(→ `run.py`) 한 번으로 가상환경 생성·패키지 설치·서버 실행·브라우저 열기까지 끝나야 하며, MVP(FR-001~005 + 원클릭 실행)는 2026-11-06, M2(FR-006~010)는 2026-11-13 이 목표다. 우선순위는 개발 속도 > 보안 > 유지보수성 순이며 DB 서버·Docker 필수 구성·외부 전송은 금지다.
+ML_miniops 는 1인 사용자가 로컬 PC(localhost) 에서 FastAPI 기반으로 실행하는 ML/DL 모델 평가 도구로, 사용자가 웹 UI 로 업로드한 PyTorch 또는 scikit-learn 모델 스크립트와 CSV 데이터를 다대다로 연결하고, Accuracy/F1/RMSE 중 평가 지표를 선택한 뒤 "Run" 버튼 한 번으로 해당 조합 전체를 하나의 실행(Run)으로 묶어 자동 평가하고, 그 결과를 pandas 기반 그래프(지표 비교·상관관계)로 한 화면에서 비교·시각화하는 것을 목표로 한다. 현재 Jupyter Notebook 에서 모델을 하나씩 수동으로 로드·평가·기록해야 하는 불편을 해소하는 것이 핵심 동기이며, 목표 일정은 작성일(2026-10-26) 기준 +1일인 "하루"다. 동시 사용자 1명, 외부 네트워크 미노출(localhost 전용, LAN 노출 없음), 인증/암호화 불필요, 개인정보 미포함(확인됨)을 전제로 아키텍처는 단일 프로세스 모놀리스 + SQLite 로 단순하게 구성한다. 1차 해석(v0.2) 에서 제기된 9개 질문 중 Q1~Q4, Q6~Q8 이 사용자 답변으로 해소되어 01/04 문서가 v0.3 으로 갱신되었고, 이번 재해석에서는 그 반영 결과를 추적표에 통합했다. 다만 모델 스크립트의 정확한 호출 인터페이스(함수 시그니처 등 구현 세부)는 01§10 에서 10/20 단계로 명시적으로 위임되었고, "하루" 일정 달성 가능성(Q9)은 사용자도 확신하지 못해 수용된 리스크로 남아 있다.
 
 ## 2. 요구사항 추적표 (Traceability)
 | ID | 원문 요약 | 해석 (구체화) | 분류 (FR/NFR/제약) | 관련 KPI | 검증 방법 | 확신도 (H/M/L) |
 |----|-----------|---------------|--------------------|----------|-----------|----------------|
-| FR-001 | 파이프라인 0~6 단계 현황 + user·project·docs Gate 결과 (Must, M1) | 단계 0 init ~ 6 docs (init, interpret, analyze, teams, plan, run, docs) 각각을 완료/진행/대기로 표시. 판정은 산출물 파일 존재·frontmatter(status, completed_phases 등)로 한다(기준은 #A3 가정). Gate 는 `aidlc.py check user|project|docs` 의 exit code 와 미작성 플레이스홀더 수를 파싱해 PASS/FAIL + 개수로 표시 | FR | KPI-01 | pytest: fixture workspace(빈/일부/전체) 별 단계 상태·Gate 결과가 CLI 결과와 일치 | M |
-| FR-002 | Phase 별 완료/전체 수, 진행률 바, Task 목록(팀·상태 필터) (Must, M1) | tasks.md 의 `## P<n>` 섹션과 체크박스(`[ ]`/`[x]`), `[팀id]` 태그를 파싱. 상태는 체크 여부 + STM 진행 중/blocked 여부로 구분. 필터는 팀·상태 | FR | KPI-01 | pytest: fixture tasks.md 파싱 결과(개수·진행률·필터)가 원문과 일치, vitest: 필터 동작 | H |
-| FR-003 | STM 현재 Task·팀·시작 시각·경과 시간, LTM rev, 미처리 cascade 단계 (Must, M1) | short-term.md frontmatter(status, task, team, opened_at)와 long-term.md `rev`, tasks.md `synced_ltm_rev`, plan.md `completed_phases` 를 읽어 cascade 1/2/3 미처리 여부를 Hook 과 같은 규칙으로 판정. 경과 시간 = 현재 시각 − opened_at | FR | KPI-01 | pytest: cascade 1/2/3 각 상황 fixture 에서 `aidlc.py status` 출력과 비교 | H |
-| FR-004 | 5시간·7일 한도 사용률(%)·초기화 시각, 세션 비용, 시간대별·모델별 토큰 그래프. 한도 정보가 없으면 토큰 집계만 + 안내 (Must, M1) | 한도·비용 = DS-04 스냅샷의 `rate_limits.five_hour/seven_day.used_percentage, resets_at`, `cost.total_cost_usd`. 토큰 그래프 = DS-03 JSONL 의 `message.usage` 4종을 `timestamp`·`message.model` 로 집계(requestId 중복 제거). 스냅샷이 없거나 `rate_limits` 가 없으면(비구독, 첫 응답 전, VSCode 패널 미지원) "한도 정보 없음" 안내 + 토큰만 표시 | FR | KPI-01 | pytest: 가짜 JSONL/스냅샷 fixture(중복 requestId, usage 없는 줄, rate_limits 없음 포함)로 집계·폴백 검증 | M |
-| FR-005 | 일시정지 → 현재 Task(cascade 포함) 완료 후 멈춤 + "일시정지됨" 표시, 재개 → 남은 반복 이어서 (Must, M1). 같은 세션이 대기하다 자동 재개 (01 §10 결정) | 대시보드 버튼이 제어 파일(유일한 쓰기 대상)에 pause/resume 를 기록. `/aidlc-run` 루프는 Task 경계(cascade 처리 후)에서 제어 파일을 확인하고, pause 면 같은 세션 안에서 대기 스크립트를 실행해 resume 를 기다린 뒤 남은 반복을 진행. 화면은 "일시정지 요청됨(현재 Task 진행 중)" → "일시정지됨(대기 중)" → "실행 중" 을 구분 | FR | - | pytest: 제어 파일 API·상태 전이 시나리오 테스트(02 §5 필수), 수동: 실제 `/aidlc-run 3` 중 일시정지/재개 리허설 | M |
-| FR-006 | STM 작업 로그와 cascade 이벤트를 시간순, 5초 이내 갱신 (Should, M2) | STM 본문의 작업 로그 섹션 + cascade 이벤트(STM 보관, LTM rev 증가, tasks 동기화, Phase 완료)를 시간순 타임라인으로 표시. cascade 이벤트를 남기는 파일이 현재 없으므로 출처는 #A6 가정 | FR | - | pytest: 로그 파싱, SSE 로 5초 이내 전달 측정 | M |
-| FR-007 | 팀별 할당/완료 Task 수, 최근 리뷰 PASS/FAIL (Should, M2) | tasks.md `[팀id]` 태그로 할당/완료 집계, STM §7 및 archive/STM-*.md 의 리뷰 기록에서 팀별 최신 PASS/FAIL 추출. 팀 목록은 `workspace/teams/*/charter.md`, 40-team-composition.md | FR | - | pytest: fixture 팀/아카이브로 집계 검증 | H |
-| FR-008 | 메모리 파일·사용량 변경 시 새로고침 없이 5초 이내 반영 (Should, M2) | 서버가 파일 변경을 감지(폴링 또는 watchfiles)해 SSE 로 변경 패널만 push, 프론트는 해당 패널 재조회 | FR | KPI-01 | 자동: 파일 수정 후 SSE 이벤트 수신까지 시간 측정 ≤ 5초 | H |
-| FR-009 | 설정 파일의 모델별 단가로 일/모델별 예상 비용 (Could, M2) | 사용자가 작성하는 단가 설정 파일(형식·위치 #A9 가정)이 있을 때만 토큰 × 단가로 일·모델별 비용 계산. 없으면 패널 숨김/안내. status line 의 `cost.total_cost_usd`(세션 비용)와는 별도 수치임을 표기 | FR | - | pytest: 단가 fixture 로 계산 검증, 설정 없음/깨짐 처리 | M |
-| FR-010 | cascade 막힘·blocked Task·한도 80% 이상 시 상단 경고 배너 (Could, M2) | 조건 3종: (a) 미처리 cascade 존재(정의 #A10), (b) STM/tasks 에 blocked Task 존재, (c) five_hour 또는 seven_day used_percentage ≥ 80 | FR | - | pytest: 조건별 fixture 에서 배너 API 응답 검증 | M |
-| SCOPE-01 | 원클릭 실행 스크립트 (In scope, M1, 5.1 흐름 1, KPI-02) — **FR 번호 없음** | `run.bat`/`run.sh` → `run.py`: Python 3.11+ 확인 → 가상환경 생성 → requirements.txt 설치 → uvicorn(127.0.0.1) 실행 → 브라우저 자동 열기. 재실행 시 설치 생략. Node 불필요(dist 포함) | 제약 (FR 누락, Q1) | KPI-02 | 수동: 깨끗한 PC(Windows/macOS/Linux) 설치 리허설 | M |
-| NFR-001 | 첫 화면 2초 이내, 상태 변화 5초 이내 반영 (Task 100개, 사용 기록 30일 기준) | 첫 화면 = 서버 기동 후 브라우저 첫 렌더까지가 아니라 "대시보드 접속 → 모든 Must 패널 표시"로 해석. 30일치 JSONL(수십~수백 MB 가능)을 매 요청 전체 재파싱하지 않도록 파일별 증분 집계 필요(#C3) | NFR | KPI-01 | 성능 테스트: 생성기로 만든 Task 100개 + 30일 가짜 JSONL fixture 에서 API 응답·렌더 시간 측정 | M |
-| NFR-002 | 파일 없음/형식 깨짐에도 서버 생존, 해당 패널에 안내 | 모든 파일 읽기는 패널 단위로 예외 격리 → 해당 패널에 `{"error": {...}}` 또는 "데이터 없음" 상태 반환, 다른 패널 정상. WARN 로그 | NFR | - | pytest: 파일 삭제·손상·빈 workspace 테스트에서 HTTP 500 0건 (02 §5 필수 테스트) | H |
-| NFR-003 | 127.0.0.1 전용, 인증 없음, Claude 대화 내용 읽지도 저장하지도 않음 | uvicorn host 를 127.0.0.1 로 고정(설정으로 0.0.0.0 변경 불가). JSONL 은 필요한 필드만 추출하고 본문은 보관·로그·응답·저장하지 않음(#C2). `~/.claude` 인증 파일 비접근 | NFR | - | 외부 IP 접속 실패 확인, 응답·로그에 fixture 본문 문자열 미포함 자동 검사 | H |
-| NFR-004 | 확장성 N/A (단일 사용자 로컬) | 대상 아님 | NFR (N/A) | - | - | H |
-| NFR-005 | 규정/컴플라이언스 N/A (외부 전송 없음) | 대상 아님. 단 외부 전송 금지는 03 §4 금지 기술로 유지 | NFR (N/A) | - | 코드 리뷰: 외부 네트워크 호출 없음 | H |
-| KPI-01 | 현재 상태(단계·Task·사용량) 파악 시간 약 1분 → 5초 이내 | 대시보드 첫 화면만으로 "지금 몇 단계? 어떤 Task? 5시간 한도 몇 %?" 3개 질문에 답하는 시간. FR-001·003·004 를 첫 화면 상단에 배치해야 달성 가능 | KPI | KPI-01 | 수동 사용 테스트(스톱워치). 질문 세트는 #A12 가정. 04 데이터로 자동 측정하지 않음 | M |
-| KPI-02 | 다운로드 후 첫 화면 5분 이내, 실행 동작 1번 | Python 3.11+ 는 설치되어 있다는 01 §7 가정 하에, `run.bat` 더블클릭(또는 `python run.py`/`run.sh`) 1회 → 브라우저 대시보드 표시까지 5분. 네트워크 속도에 따라 pip 설치 시간이 변동 | KPI | KPI-02 | 깨끗한 PC 설치 리허설(OS 별 1회 이상), 소요 시간 기록 | M |
-| CON-01 | 기술 스택: Python 3.11+ / FastAPI + uvicorn / Pydantic, TypeScript 5 strict / Vue 3 + Vite / ECharts | 02 §1·§2 그대로. 데이터 처리는 표준 라이브러리. frontmatter 는 YAML 라이브러리 없이 단순 key: value 파서(또는 aidlc 기존 파서 재사용) | 제약 | - | ruff, eslint, 타입 검사 | H |
-| CON-02 | 단일 프로세스 모놀리스, 서버 무상태, 조회 REST + 실시간 SSE, `/api/v1`, 에러 포맷 고정 | FastAPI 가 dist 정적 파일 + API 서빙. SSE 는 FastAPI StreamingResponse(추가 라이브러리 없이). OpenAPI 명세를 `workspace/project/contracts/openapi.json` 으로 내보내고 `docs/api/reference.md` 재생성 | 제약 | - | API 테스트, 명세 export 확인 | H |
-| CON-03 | 읽기 전용 — 대시보드가 쓰는 파일은 루프 제어 파일 하나 | 모든 서비스 계층은 읽기 전용. 쓰기 API 는 pause/resume 1종. Hook 엔진의 쓰기 함수(STM 보관 등)를 import 해 호출하지 않음 | 제약 | - | 코드 리뷰 + 테스트: 조회 API 호출 전후 workspace 파일 해시 불변 | H |
-| CON-04 | `frontend/dist` 저장소 포함, 사용자 Node 빌드 불필요. frontend 변경 시 dist 재빌드를 같은 PR 에 포함 | dist 는 커밋 대상(.gitignore 제외 확인 필요) | 제약 | KPI-02 | PR 리뷰, run 스크립트로 Node 없이 실행 확인 | H |
-| CON-05 | `/api/v1/health` 헬스 체크, 콘솔 텍스트 로그(시각·레벨·메시지), 대화 내용·토큰/키 로그 금지 | health 는 서버 생존 + 주요 데이터 소스 접근 가능 여부 반환 | 제약 | - | API 테스트, 로그 검사 | H |
-| CON-06 | 테스트는 fixture 가짜 기록만, backend 라인 커버리지 70%+, 필수: 단위+API, 일시정지/재개 시나리오, 깨진 파일·빈 workspace | 실제 `~/.claude` 경로를 테스트에서 참조하지 않도록 데이터 경로를 설정으로 주입 | 제약 | - | pytest --cov, CI 없음 → 로컬 실행 | H |
-| CON-07 | Agent 승인 없이 금지: `~/.claude` 수정·삭제, `~/.claude/settings.json` 변경, 전역 패키지 설치 | status line 등록·패키지 설치는 프로젝트 범위(`.claude/settings.json`, 가상환경)에서만(#A4) | 제약 | - | 리뷰 | H |
-
-> 기술 금지 검사: 02 의 기술(FastAPI, uvicorn, Pydantic, Vue 3, Vite, ECharts, pytest, vitest, ruff, eslint, prettier, pip-audit) 중 03 §4 금지(DB 서버, Docker 필수 구성, 외부 SaaS 전송)에 해당하는 것은 **없음**. watchfiles 는 "폴링보다 빠를 때만" 허용이므로 ADR 로 결정한다(uvicorn[standard] 에 포함된다는 점도 고려).
+| FR-001 | 멀티 모델-데이터 연결 (다대다) | UI 에서 업로드된 Model/Dataset 레코드를 N:M 매핑으로 연결해 "평가 대상 조합"을 생성한다 | FR (Must) | KPI-02 | UI 로 N:M 연결을 생성 후, 등록된 조합 목록에서 확인 (Given/When/Then 존재 — 테스트 가능) | H |
+| FR-002 | 모델·데이터 입력 기능 | 사용자가 PyTorch 또는 scikit-learn 모델 스크립트와 CSV 데이터 파일을 웹 UI 로 업로드하면 평가 대상 목록에 등록한다 (형식 확정: v0.3) | FR (Must) | KPI-02 | 업로드 후 목록 노출 확인, 업로드 파일 형식(PyTorch/scikit-learn 스크립트, CSV) 검증. **모델 스크립트의 정확한 호출 인터페이스(함수 시그니처 등)는 01§10 에서 10-business-analysis/20-architecture-analysis 단계로 명시적으로 위임된 구현 세부이며, 해당 위임 자체는 사용자가 의도한 범위임** | H (형식·업로드 방식 확정 — 세부 호출 인터페이스는 하위 단계 설계 과제로 분리) |
+| FR-003 | 평가 지표 선택 기능 | 사용자가 모델-데이터 조합별로 Accuracy/F1/RMSE 중 지표를 선택하면 해당 지표로 평가가 수행되고 결과가 저장된다 (지표 목록 확정: v0.3) | FR (Must) | KPI-02 | 지표 선택 후 평가 실행 결과값(Evaluation.value)이 저장되는지 확인 | H |
+| FR-004 | 평가 자동 실행 (Run) — 신규 | 사용자가 UI 에서 모델-데이터 조합과 지표를 선택한 뒤 Run 버튼을 클릭하면, 그 시점의 조합 전체를 하나의 Run 으로 묶어 자동으로 평가를 실행하고 결과를 저장한다 | FR (Must) | KPI-02 | Run 클릭 → Run 레코드 1건 생성 + 해당 Run 에 속한 Evaluation 레코드들이 저장되는지 확인 (Given/When/Then 존재 — 테스트 가능) | H |
+| FR-005 | 결과 시각화 — 신규 | 완료된 평가 결과(Evaluation)를 pandas 기반 그래프(지표별 비교, 지표 간 상관관계)로 화면에 표시한다 | FR (Must) | KPI-02(간접) | 평가 완료 후 결과 화면에서 지표 비교 그래프·상관관계 그래프가 렌더링되는지 확인 (Given/When/Then 존재, 예시 포함 — 테스트 가능) | H |
+| KPI-01 | 응답/처리 속도 | 목표 값 없음 — 성능 지표 자체를 추적하지 않음 (NFR-001 과 일치) | KPI | KPI-01 | 측정 안 함 (목표 없음으로 명시) | H |
+| KPI-02 | 동시 평가 가능 모델 수 | 1회 Run 에서 사용자가 입력한 N개 모델 전부가 평가 완료되는 것을 목표로 함 (완료 모델 수 / 입력 모델 수) | KPI | KPI-02 | 04 의 Run 엔티티(1건) ─ Evaluation(N건) 관계로 분모/분자 집계 가능 — **v0.2 당시의 "Run 단위 부재" 문제는 04 Run 엔티티 추가로 해소됨** | H |
+| NFR-001 | 성능 | 응답 지연 목표 없음 (개인용 로컬 도구) | NFR | — | N/A (목표 없음, 검증 불필요) | H |
+| NFR-002 | 가용성 | 상시 가동 불필요, 장애 시 재시작으로 충분 | NFR | — | 수동 확인 (재시작으로 복구되는지) | H |
+| NFR-003 | 보안 | 로컬 PC(localhost) 전용으로만 서비스, LAN/외부 네트워크 노출 없음, 별도 인증/암호화 불필요 (v0.3 에서 "로컬망" 표현을 "로컬 PC(localhost) 전용"으로 명확화 — 03§6 과 합치) | NFR / 제약 | — | 수동 확인 (서버가 127.0.0.1 등 로컬 주소에만 바인딩되는지) | H |
+| NFR-004 | 확장성 | 동시 사용자 1명 전제, 멀티유저/동시성 설계 불필요 | NFR / 제약 | — | 코드 리뷰로 동시성 처리 부재 확인 | H |
+| NFR-005 | 규정/컴플라이언스 | 개인정보 없음 (업로드되는 모델/데이터에 PII 미포함 — v0.3 에서 가정이 아니라 확인됨으로 명확화) | NFR / 제약 | — | 04§6 "개인정보 포함 여부: 아니오(확인됨)" 재확인. 별도 마스킹/전송 제한 규칙 불필요 | H |
 
 ## 3. 모호함 & 충돌
-| # | 위치 (문서§) | 내용 | 유형 (모호/충돌/누락) | Agent 의 임시 가정 | 영향 |
-|---|-------------|------|----------------------|-------------------|------|
-| C1 | 01 §6 NFR-001 vs 01 §5 FR-008, §9 | NFR-001 은 "상태 변화 5초 이내 반영"을 조건 없이 요구하고 5.1 흐름 3·FR-005("일시정지됨" 표시)도 실시간 갱신을 전제하지만, 자동 갱신 FR-008 은 Should·M2 로 잡혀 있다 | 충돌 | M1 에 SSE 기반 최소 자동 갱신(FR-003 메모리 패널, FR-005 제어 상태, FR-004 한도)을 포함하고, 전 패널 확장·변경 감지 최적화는 M2(FR-008)에서 완성한다. (확신도 M) | M1 범위 소폭 증가 |
-| C2 | 01 NFR-003, 04 §2.1·§6 vs 03 §1 원칙 3 | "대화 본문은 메모리에 올리지도 않는다"고 하지만 DS-03 은 한 JSON 줄에 본문과 usage 가 함께 있어, 표준 라이브러리만으로는 줄을 읽지 않고 usage 만 꺼낼 수 없다(스트리밍 JSON 파서는 외부 의존성) | 충돌 | 의도를 "본문을 **보관·가공·로그·응답·저장하지 않는다**"로 해석. 구현: 줄 단위 스트리밍 읽기 → `"usage"` 문자열 없는 줄은 파싱 전 버림 → 파싱 직후 timestamp·model·usage·requestId 만 새 객체로 복사하고 원본 dict 즉시 폐기. `message.content` 키에는 접근하지 않음. (확신도 H) | 보안(2순위) 해석. 사용자 확인 필요(Q2) |
-| C3 | 01 NFR-001 vs 03 §3 상태 관리, §5 일관성 | "서버는 상태를 갖지 않는다 / 캐시는 수 초 TTL" 을 문자 그대로 따르면 30일치 JSONL(수십 MB × 여러 파일)을 수 초마다 전량 재파싱해야 해서 첫 화면 2초를 지키기 어렵다 (성능은 5순위지만 수치 NFR 이 있음) | 충돌 | "상태 없음" = 디스크에 자체 데이터를 영속하지 않음으로 해석. 프로세스 메모리 안의 **파생 캐시**(파일별 size·mtime·읽은 offset + 집계값)는 허용, 파일이 바뀌면 증분 반영, 재시작 시 재구축. 화면 값은 수 초 이내 최신성 유지. (확신도 M) | 아키텍처 ADR 대상(사용량 수집 방식) |
-| A4 | 04 DS-04, 02 §11, 03 §1 원칙 2, 01 §10 | DS-04 는 status line 스크립트가 JSON 을 파일로 저장한다고 하지만, 누가 statusLine 을 등록하는지·스냅샷 파일 위치가 정의되지 않았다. 사용자 전역 설정 변경은 승인 필요 | 누락 | 저장소의 프로젝트 `.claude/settings.json` 에 `statusLine`(command + refreshInterval)을 개발 시점에 추가(커밋). 스크립트는 stdin JSON 중 `rate_limits`·`cost`·`context_window`·모델·세션 ID 만 git 무시 경로(예: `monitor/.runtime/statusline.json`)에 원자적으로 저장하고 짧은 상태 문자열을 출력. 대시보드는 읽기만. 사용자 전역 statusLine 이 있으면 프로젝트 설정이 우선 적용되어 가려진다. (확신도 M) | FR-004 데이터 수집 경로, Q4 |
-| A5 | 01 §10 (VSCode 확장 statusLine 실행 여부) | 공식 문서로 확인되지 않음. 미지원이면 VSCode 채팅 패널만 쓰는 사용자는 한도 사용률을 못 본다 | 모호 | FR-004 수용 기준의 폴백(토큰 집계만 + 안내)으로 Must 는 충족. 구현 초기에 실측 확인 Task 를 둔다. 미지원이면 "CLI 세션에서 실행하면 한도가 표시됨" 안내. 스냅샷의 생성 시각을 함께 표시해 오래된 값임을 알린다. (확신도 M) | FR-004 표시 범위, Q13 |
-| A6 | 01 FR-006, 04 §1 | "cascade 이벤트"를 기록하는 데이터 소스가 04 에 없다. 현재 Hook 은 메시지를 Claude 에게만 출력하고, 파일로 남는 것은 `archive/STM-*.md`(archived_at), frontmatter 값, `.cascade-state.json`(Stop 가드 상태) 뿐이다 | 누락 | M2 에서 frontmatter·archive 변화로 이벤트를 **추론**해 타임라인 구성(STM 보관=archived_at, LTM rev 증가, synced_ltm_rev 갱신, completed_phases 추가). Hook 에 이벤트 로그를 추가하는 안은 프레임워크 변경이므로 사용자 승인 후. (확신도 M) | FR-006 정확도, Q8 |
-| A7 | 01 FR-005, §10 결정 | "같은 세션이 일시정지 상태로 기다린다"의 구현 수단이 정의되지 않았다. Claude Code 는 기본 대기 기능이 없어 세션 안에서 대기 스크립트(Bash 도구 호출)를 실행해야 하며, 도구 호출에는 시간 제한(최대 10분 수준)이 있어 긴 일시정지는 대기 호출을 반복해야 한다. 반복마다 소량의 토큰·컨텍스트를 쓴다. 세션이 닫히면 재개할 주체가 없다 | 모호 | 대기 스크립트(Python, OS 공통)가 제어 파일을 1~2초 간격으로 확인, 제한 시간 직전 "still paused" 로 반환 → 루프가 다시 호출. 대기 중 heartbeat(대기 시작 시각·마지막 확인 시각)를 제어 상태에 기록해 화면이 "일시정지됨(세션 대기 중)"과 "세션 없음"을 구분. 세션이 끊긴 뒤 재개하면 다음 `/aidlc-run` 시작 시 남은 반복 수를 안내. (확신도 M) | FR-005 설계, ADR 필수(루프 제어 방식), Q5 |
-| A8 | 01 FR-005, 03 §10, CLAUDE.md | 루프 제어는 대시보드(monitor/)만으로 불가능하고 AI-DLC 프레임워크(`.claude/skills/aidlc-run/SKILL.md`, 필요시 hook)를 수정해야 한다. 제어 파일 위치도 미정. `workspace/memory/` 는 Hook·오케스트레이터 소유 | 누락 | 프레임워크 변경 범위는 aidlc-run 스킬에 "Task 경계에서 제어 파일 확인 + 대기 스크립트 실행" 단계 추가로 최소화. 제어 파일은 메모리 cascade 판정 대상이 아닌 별도 파일(예: `workspace/memory/loop-control.json`)로 두고 Hook 판정 로직에 영향이 없음을 테스트. 위치는 ADR 로 확정. (확신도 M) | 팀 소유권(architecture/backend), Q6 |
-| A9 | 01 FR-009 | 단가 설정 파일의 위치·형식이 없다 | 모호 | 사용자가 작성하는 `monitor/pricing.json`(모델 ID → 입력/출력/캐시 생성/캐시 읽기 단가, USD per 1M tokens). 저장소에는 예시 파일만 두고, 대시보드는 읽기만 한다. (확신도 L — Could 항목) | FR-009 만 |
-| A10 | 01 FR-010 | "cascade 가 막혔다"의 정의가 없다 | 모호 | 미처리 cascade 가 존재하고 일정 시간(예: 10분) 이상 해소되지 않거나, `.cascade-state.json` 상 Stop Hook 차단이 최대 횟수(3회)에 도달한 경우. (확신도 L — Could 항목) | FR-010 만 |
-| A11 | 01 FR-001 | 각 단계의 완료/진행/대기 판정 기준이 없다 | 모호 | 0 init: workspace/user 존재 / 1 interpret: 00 해석서 존재(status 표시) / 2 analyze: 10·20·30 존재 / 3 teams: 40 + teams/* 존재 / 4 plan: plan.md·tasks.md 에 Phase 존재 / 5 run: tasks 일부 [x]=진행, 전부 [x]=완료 / 6 docs: docs Gate PASS. 이전 단계 완료 + 자기 산출물 일부 = 진행. (확신도 M) | FR-001 표시 |
-| A12 | 01 §2 KPI-01, 04 §5 | 04 §5 는 DS-03·04 가 KPI-01 측정에 쓰인다고 하지만 KPI-01 은 사람 대상 시간 측정이며 질문 세트가 정의되지 않았다 | 모호 | 질문 3개 고정: "지금 몇 단계인가", "지금 어떤 Task 를 어느 팀이 하고 있나", "5시간 한도를 몇 % 썼고 언제 초기화되나". 측정은 수동, 데이터 소스 불필요. (확신도 M) | KPI 판정 |
-| A13 | 01 FR-004, 04 §3 Q1, 01 §3 Out of scope | 5시간·7일 한도는 계정 전체 기준인데, 토큰 집계를 이 저장소의 `~/.claude/projects/<프로젝트>/` 만 하면 다른 프로젝트 사용분이 빠진다. "여러 저장소 모니터링"은 범위 밖 | 모호 | 토큰 그래프는 이 저장소 프로젝트 디렉터리만 집계하고 "이 프로젝트 기준"이라고 표기. 한도 %는 status line 값(계정 기준)을 그대로 표시. 프로젝트 디렉터리는 저장소 절대 경로를 Claude Code 규칙으로 인코딩해 찾고, 못 찾으면 안내. (확신도 M) | FR-004 수치 해석, Q7 |
-| A14 | 01 FR-004 | "시간대별" 그래프의 기간·단위, "오늘"의 시간대가 없다 | 모호 | 기본 최근 24시간 1시간 단위 + 기간 선택(5시간 구간/7일/30일, 30일은 일 단위). 시간대는 PC 로컬 시간. (확신도 M) | FR-004 화면 |
-| A15 | 04 §4 | 같은 응답이 여러 줄로 기록되어 중복 집계 위험 | 모호 | `requestId`(없으면 message.id) 기준으로 묶어 마지막 줄의 usage 를 채택. usage 없는 줄은 건너뜀. EDA(30)에서 실측으로 확정. (확신도 M) | 토큰 수치 정확도 |
-| A16 | 01 §3 In scope "원클릭 실행 스크립트" | 범위·마일스톤(M1)·KPI-02 에 있으나 대응 FR 이 없다 | 누락 | SCOPE-01 로 추적하고 수용 기준은 KPI-02 + 5.1 흐름 1 을 그대로 사용(Must 취급). (확신도 M) | M1 범위, Q1 |
-| A17 | 01 FR-003, 04 DS-02 | `aidlc.py status`/`check` 를 서브프로세스로 부를지, 같은 판정 로직을 재구현할지 미정. Windows 에는 `python3` 명령이 없을 수 있다. Hook 엔진 모듈에는 쓰기 함수(STM 보관)가 섞여 있다 | 모호 | 서브프로세스는 `sys.executable` 로 호출하고 출력은 파싱하며, 쓰기 경로가 있는 함수는 호출하지 않는다. status/check 명령이 읽기 전용인지 구현 전에 확인. (확신도 M) | FR-001·003, CON-03 |
+
+### 3.1 v0.2 → v0.3 반영으로 해소된 항목 (참고용, 추가 조치 불필요)
+| # | v0.2 당시 내용 | 해소 근거 |
+|---|----------------|-----------|
+| 1 | In-scope "자동 평가 실행/결과 시각화"에 대응하는 FR 없음 | 01 v0.3 에 FR-004(Run 자동 실행), FR-005(결과 시각화) 신규 추가 (Q5 는 Q8 답변으로 해소) |
+| 2 | 모델/스크립트 형식·호출 인터페이스 미정 | 01 v0.3 FR-002 에서 형식을 PyTorch 또는 scikit-learn 로 확정 (Q1). 단, 함수 시그니처 등 호출 인터페이스 세부는 01§10 에서 10/20 단계로 명시적 위임 — 이는 모호함이 아니라 사용자가 의도적으로 다음 단계로 넘긴 설계 과제이므로 "해소"로 처리 |
+| 3 | 평가 지표 목록 미정 | 01 v0.3 FR-003 에서 Accuracy/F1/RMSE 3종으로 확정 (Q2) |
+| 4 | 결과 시각화 형태 미정 | 01 v0.3 FR-005 에서 pandas 기반 그래프(지표 비교, 상관관계)로 확정, 예시(모델별 F1 막대 그래프) 포함 (Q4) |
+| 5 | NFR-003 "로컬망" vs 03§6 "로컬 PC" 표현 차이 | 01 v0.3 NFR-003 에서 "로컬 PC(localhost) 전용, LAN/외부 노출 없음"으로 명확화해 03§6 과 합치 (Q6) |
+| 6 | 04§6 "개인정보 미포함"이 미확정 가정으로 남음 | 04 v0.3 §6 에서 "아니오(확인됨)"으로 확정 (Q7) |
+| 8 | KPI-02 측정을 위한 "Run(실행 단위)" 개념이 04 데이터 모델에 없음 | 04 v0.3 §2 에 Run 엔티티 추가, Run 1─N Evaluation 관계로 집계 기준 확정 (Q8) |
+
+### 3.2 아직 열려 있는 항목 (차단 여부 포함)
+| # | 위치 (문서§) | 내용 | 유형 (모호/충돌/누락) | Agent 의 임시 가정 / 처리 방향 | 영향 |
+|---|-------------|------|----------------------|-------------------------------|------|
+| 7 | 02§7 | "개인정보 미취급 가정 — **06** 데이터 정의서에서 재확인"이라 적혀 있으나 실제 데이터 정의서는 **04**번 문서 (여전히 수정 안 됨, 재확인 결과 v0.2 → v0.2 로 동일) | 누락/오기 (경미) | 04-data-definition.md 를 가리키는 것으로 해석 (확신도 H) | 매우 낮음 — 문서 정합성 문제일 뿐, 동작·설계에 영향 없음. User 문서라 Agent 가 직접 수정하지 않음. **GO 를 막지 않음** |
+| 9 | 01§0 일정 vs §5 FR 전체 (Q9) | "하루" 목표 기한 내 FR-001~005(업로드+다대다 연결+지표선택+자동평가+시각화)을 Must 로 완성해야 하는데, 범위는 이제 확정됐지만 일정 달성 가능 여부는 사용자 본인도 "모르겠다"고 답함 | 리스크 (충돌 아님 — 사용자가 이미 수용 방침을 결정함) | 01§10 에 이미 "리스크로 관리하며 진행, 안 되면 범위를 더 줄인다"는 완화 방침이 명시됨. 이는 **스펙 간 충돌이 아니라 실행 단계(Task 배분/우선순위)에서 관리할 일정 리스크**로 재분류. 00 해석서 차원에서 추가로 해결할 모호함은 없음 | 범위/요구사항 자체는 명확하므로 해석 단계를 막지 않음. 다만 `/aidlc-plan` 단계에서 Task 우선순위(Must 먼저, 부족하면 Could/Should 제외)로 리스크를 관리할 것을 권고 |
+| 10 (신규) | 01 FR-003 / 04 Model.framework | Accuracy/F1 은 분류 문제, RMSE 는 회귀 문제에 쓰이는 지표인데, FR-003 수용 기준은 "지표를 선택하면 평가가 수행된다"고만 되어 있어 모델의 문제 유형(분류/회귀)과 선택 지표가 불일치할 경우(예: 회귀 모델에 Accuracy 선택)의 처리 방식이 명시되어 있지 않음 | 모호 (경미, 구현 세부) | 20-architecture-analysis 단계에서 지표-문제유형 호환성 검증(또는 에러 처리) 규칙을 설계하는 것으로 가정 (확신도 M) | Must FR 의 핵심 동작(연결·선택·실행·시각화)에는 영향 없음 — 구현 시 예외처리 설계 과제일 뿐이라 **GO 를 막지 않음** |
 
 ## 4. 사용자에게 묻는 질문
 <!-- 답이 오면 해당 user 문서를 사용자가 고치고, 이 문서는 /aidlc-interpret 재실행으로 갱신 -->
-> **답변 처리 (2026-10-23):** 사용자가 "추천대로 해서 만들어줘" 라고 지시하여 아래 답을 적용함. 바꾸려면 해당 Q 의 답을 알려 주거나 user 문서를 고친 뒤 `/aidlc-interpret` 재실행.
-> - Q2 → 예. JSONL 각 줄은 읽되 `"usage"` 문자열이 없는 줄은 파싱 전에 버리고, usage·model·timestamp·requestId 만 복사. 본문은 접근·보관·로그·응답·저장하지 않음.
-> - Q4 → 예. 프로젝트 `.claude/settings.json` 에 등록. 사용자 전역 statusLine 이 있으면 그 명령을 실행해 출력을 그대로 이어 붙임(체이닝) — 기존 표시를 가리지 않음.
-> - Q5 → 허용. 최대 일시정지 시간 기본 2시간(설정 가능). 초과 시 루프를 정상 종료하고 STM 은 건드리지 않음.
-> - Q6 → 승인. FR-005 구현에 필요한 `.claude/skills/aidlc-run/SKILL.md`·`aidlc/scripts` 수정은 이 프로젝트 범위. 제어 파일 `workspace/memory/.control.json`.
-> - Q1, Q3, Q7~Q13 → 본문 가정(A1~A16) 그대로 적용.
-- [x] Q1. 원클릭 실행 스크립트를 FR(예: FR-011, Must, 수용 기준 = KPI-02)로 01 §5 에 추가할까요? (A16)
-- [x] Q2. "대화 본문을 메모리에 올리지 않는다"를 "줄을 읽되 본문 필드는 접근·보관·로그·응답·저장하지 않고 즉시 버린다"로 해석해도 됩니까? (C2)
-- [x] Q3. NFR-001 의 "상태 변화 5초 이내 반영"을 MVP(M1)부터 적용하나요? 그렇다면 최소 자동 갱신을 M1 에 포함합니다. (C1)
-- [x] Q4. status line 을 저장소의 `.claude/settings.json`(프로젝트 범위)에 등록해도 됩니까? 이미 개인 statusLine 을 쓰고 있다면 가려지는데, 기존 출력을 이어 붙이는(체이닝) 방식이 필요한가요? (A4)
-- [x] Q5. 일시정지 대기 중 세션이 약 10분마다 대기 호출을 반복하며 소량의 토큰을 씁니다. 허용합니까? 최대 일시정지 시간(초과 시 루프 종료)을 둘까요? (A7)
-- [x] Q6. 루프 제어를 위해 AI-DLC 프레임워크(`.claude/skills/aidlc-run/SKILL.md`, 필요시 Hook)를 수정하는 것을 이 프로젝트 범위로 승인합니까? 제어 파일을 `workspace/memory/` 아래 두어도 됩니까? (A8)
-- [x] Q7. 토큰 집계를 이 저장소의 Claude Code 기록만으로 해도 됩니까, 아니면 `~/.claude/projects/` 전체 합계도 필요합니까? (A13)
-- [x] Q8. FR-006 의 cascade 이벤트를 파일 변화로 추론할까요, 아니면 Hook 이 이벤트 로그 파일을 남기도록 바꿀까요? (A6)
-- [x] Q9. 토큰 그래프의 기본 기간·단위(가정: 최근 24시간, 1시간 단위)가 맞습니까? (A14)
-- [x] Q10. FR-010 의 "cascade 막힘" 기준(가정: 10분 이상 미해소 또는 Stop Hook 3회 차단)이 맞습니까? (A10)
-- [x] Q11. FR-001 의 단계별 완료/진행/대기 판정 기준(A11)이 의도와 맞습니까?
-- [x] Q12. KPI-01 사용 테스트 질문 3개(A12)로 확정해도 됩니까?
-- [x] Q13. VSCode 확장에서 status line 이 동작하지 않으면 "CLI 세션에서만 한도 표시" 안내로 충분합니까? (A5)
+- [x] Q1. 지원할 모델/스크립트 형식과 호출 인터페이스는 무엇인가요? — **답변 반영:** PyTorch 또는 scikit-learn 로 확정 (01 v0.3 FR-002). 함수 시그니처 등 세부 호출 인터페이스는 10/20 단계에서 구체화 (01§10).
+- [x] Q2. 평가에 사용할 지표의 구체적 목록은 무엇인가요? — **답변 반영:** Accuracy/F1/RMSE 3종 (01 v0.3 FR-003).
+- [x] Q3. 입력 데이터의 구체적 포맷과 저장 위치는 무엇인가요? — **답변 반영:** CSV 고정, 웹 UI 업로드 (04 v0.3 DS-01). 저장 위치는 구현 시 결정(예: `workspace/data/`) — 범위 내 허용된 수준의 미확정.
+- [x] Q4. 결과 시각화 화면의 형태는 어떤 모습을 기대하시나요? — **답변 반영:** pandas 기반 그래프(지표 비교, 상관관계), 예시로 모델별 F1 막대 그래프 (01 v0.3 FR-005).
+- [x] Q5. "평가 자동 실행"과 "결과 시각화"에 대응하는 FR 을 추가할까요? — **답변 반영(Q8 답변으로 해소):** FR-004(Run 자동 실행), FR-005(결과 시각화) 신규 추가.
+- [x] Q6. NFR-003 의 "로컬망"은 같은 네트워크의 다른 기기 접속을 뜻하나요, localhost 전용인가요? — **답변 반영:** localhost(본인 PC) 전용, LAN/외부 노출 없음 (01 v0.3 NFR-003).
+- [x] Q7. 04§6 "개인정보 미포함"이 실제로 맞는 가정인가요? — **답변 반영:** 맞음, 확인됨 (04 v0.3 §6, NFR-005).
+- [x] Q8. KPI-02 측정을 위한 "1회 실행(Run)" 단위를 어떻게 구분할 계획인가요? — **답변 반영:** UI 에서 연결 후 Run 버튼을 누르면 그 시점의 조합을 하나의 Run 으로 자동 그룹화 (01 v0.3 FR-004, 04 v0.3 Run 엔티티). 이 답변이 Q5 도 함께 해소함.
+- [x] Q9. (일정 리스크) "하루" 목표를 유지할 경우 범위를 더 좁혀도 되는지? — **답변 반영:** "모르겠다" — 미확정이지만, 사용자가 이미 "리스크로 관리하며 진행, 부족하면 범위 축소"라는 완화 방침을 01§10 에 직접 남겨 추가 질문 없이 실행 단계(계획/우선순위)에서 관리하기로 함. **00 해석서 차원의 블로커로 취급하지 않음** — `/aidlc-plan` 단계에서 Must 우선, Could/Should 축소 옵션을 열어둘 것을 권고.
 
 ## 5. 표준 & 철학 요약 (분석 Agent 용 체크리스트)
-- 개발 표준 핵심 규칙 (02):
-  - Python 3.11+ / FastAPI + uvicorn / Pydantic 입출력, TypeScript 5 strict / Vue 3 + Vite / ECharts. pip + requirements.txt(버전 고정), npm 은 프론트 수정 시에만
-  - ruff format/check, eslint + prettier. snake_case / PascalCase.vue / useXxx.ts. type hint 필수, public docstring, 주석은 "왜"만
-  - 디렉터리: `monitor/backend/app/{api,services,models}`, `monitor/backend/tests`, `monitor/frontend/src/{views,components/panels,api}`, `monitor/frontend/dist`(커밋), 루트 `run.py`, `run.bat`/`run.sh`
-  - REST + SSE, `/api/v1`, 에러 `{"error": {"code", "message"}}`, 인증 없음(127.0.0.1), OpenAPI → `workspace/project/contracts/openapi.json` (+ docs/api/reference.md 재생성)
-  - 테스트: pytest + TestClient, vitest, backend 라인 70%+, 필수 = 단위·API·일시정지/재개 시나리오·깨진 파일/빈 workspace. 실제 `~/.claude` 기록 사용 금지(fixture 만)
-  - 로그: 콘솔 텍스트, ERROR=패널 못 그림, WARN=일부 생략. 대화 내용·토큰/키 로그 금지
-  - 보안: 비밀값 없음, `~/.claude` 인증 파일 비접근, 요청에서 파일 경로 받지 않음, pip-audit/npm audit(릴리스 전)
-  - 의존성: 표준 라이브러리로 안 될 때만, MIT/Apache/BSD, 최근 1년 내 릴리스
-  - Git: 작업 브랜치 → main PR, Conventional Commits, squash, 테스트 통과 필수, 프론트 변경 시 dist 동봉
-  - DoD: 테스트·린트·타입 통과, dist 재빌드, 문서 갱신, run 스크립트로 화면 확인
-  - Agent 금지(승인 없이): `~/.claude` 수정·삭제, 전역 settings 변경, 전역 패키지 설치. 불확실하면 STM 질문 + blocked
-- 아키텍처 우선순위 (03): 1위 개발 속도(2주 MVP) ~ 2위 보안(로컬 전용, 대화 비접근) ~ 3위 유지보수성(예시로 읽히는 코드). 이하 가용성 4, 성능 5, 운영 비용 6, 확장성 7
-  - 핵심 원칙: ① 설치·실행 단순(실행 파일 하나로 웹까지) ② 읽기 전용 우선(쓰기는 루프 제어뿐) ③ 의존성 최소
-  - 스타일: 단일 프로세스 모놀리스(FastAPI 가 API + Vue dist 서빙), 조회 REST / 실시간 SSE, 서버 무상태(진실의 원천 = workspace/ 파일 + Claude Code 기록)
-  - 금지: DB 서버, Docker 필수 구성, 외부 SaaS 전송. 허용: watchfiles(폴링보다 빠를 때만)
-  - 안티패턴: 대시보드가 AI-DLC 파일 직접 수정(제어 파일 제외), 실행 전 Node 빌드 요구
-  - ADR 필수: 사용량 수집 방식, 루프 제어 방식, 프론트 배포 방식(dist 포함), 새 외부 의존성 → `workspace/project/adr/ADR-xxx.md`
-  - 관측성: 콘솔 로그 + `/api/v1/health`, 알림 대신 경고 배너
-- 데이터 제약 (04):
-  - 소스 5종: DS-01 workspace/memory(+archive), DS-02 aidlc.py check/status 출력, DS-03 `~/.claude/projects/<프로젝트>/*.jsonl`(개인정보), DS-04 status line 스냅샷 JSON, DS-05 팀 charter·40 문서
-  - DS-03 은 `timestamp`, `message.model`, `message.usage`(input/output/cache_creation_input/cache_read_input tokens), `requestId` 만 추출. `message.content` 는 읽지 않음
-  - 품질: usage 없는 줄 혼재, requestId 중복, `rate_limits` 는 Pro/Max + 세션 첫 응답 이후에만 존재
-  - 규모: JSONL 세션당 수십 MB 가능 → 스트리밍·증분 집계 필요, EDA Q5 로 집계 시간 실측
-  - 대시보드는 자체 데이터를 저장하지 않음(예외: 제어 파일). ML/AI 사용 없음
-  - EDA 질문: 오늘/현재 5시간 토큰(입력·출력·캐시별), 모델별 비중, 팀별 Task 당 평균 토큰·시간(STM opened_at~archived_at 매핑), 캐시 적중률, 대용량 집계 시간
+- **개발 표준 핵심 규칙 (02, v0.2 — 변경 없음):**
+  - Backend Python 3.12 + FastAPI (pip+venv) / Frontend Jinja2 템플릿 + 바닐라 JS (Node 빌드 없음) / Data: pandas 등
+  - 포맷/린트: ruff format + ruff check (선택적 준수), PEP8 네이밍(snake_case/PascalCase/UPPER_SNAKE), type hint 권장(선택)
+  - 디렉토리: `app/api`, `app/eval`, `app/web`, `tests/`(선택)
+  - Git: main 에 직접 커밋 (trunk-based, PR/리뷰 없음), 커밋 메시지 자유 형식
+  - 테스트: pytest 선택, 커버리지 기준 없음, 핵심 평가 로직(연결/지표 계산)만 최소 단위 테스트 권장, 더미 데이터로 테스트
+  - API: REST, 버저닝 없음, 에러는 FastAPI 기본 `HTTPException`, 인증/인가 없음
+  - 로깅: 기본 `logging` 콘솔 출력 (ERROR=평가 실패, WARN=선택적 지표 누락, INFO=평가 시작/완료)
+  - 보안 코딩: 비밀값 없음, pydantic 기본 스키마 검증, 의존성 취약점 점검 선택
+  - 의존성: 특별한 승인 절차 없음
+  - DoD: 수동 확인 동작 + lint 통과(선택) + 문서 갱신 + 핵심 로직 단위 테스트(있다면) 통과
+  - Agent 금지 행위: 외부 네트워크 노출 설정 변경, 전역 Python 환경 설치, 사용자 업로드 데이터 삭제 — 사람 승인 필요. 불확실하면 추측 말고 STM 에 질문 후 blocked 처리
+  - 참고(경미): §7 의 "06 데이터 정의서" 표기는 04 를 가리키는 오기로 추정 — User 문서라 Agent 가 직접 수정하지 않음 (§3.2 #7)
+- **아키텍처 우선순위 (03, v0.2 — 변경 없음): 1위~3위 및 전체**
+  - 핵심 원칙: 1) 단순함 우선 (과설계·조기 분산 금지) 2) 로컬 단일 프로세스 3) 결과 비교 용이성 > 성능
+  - 품질속성 순위: 1 개발속도 > 2 유지보수성 > 3 가용성/신뢰성 > 4 확장성 > 5 성능 > 6 운영비용 > 7 보안
+  - 스타일: 단일 프로세스 모놀리스, 동기 REST 만, 상태는 SQLite/로컬 파일(서비스 로직은 stateless)
+  - 금지 기술: 클라우드 매니지드 서비스, 별도 메시지 브로커/분산 시스템 (02 의 기술 선택과 충돌 없음 확인됨)
+  - 관측성: 콘솔 로그만, 알림/메트릭/트레이스 불필요. 배포: `python run.py` 류 실행 스크립트, dev/prod 구분 없음
+  - NFR-003 "로컬 PC(localhost) 전용" (01 v0.3) 과 03§6 "로컬 PC" 표현이 이제 완전히 합치함
+- **데이터 제약 (04, v0.3):**
+  - 고정 데이터셋 없음 — 사용자가 실행 시점마다 임의의 모델/데이터를 업로드 (사전 EDA 대상 데이터 자체가 없음)
+  - DS-01 CSV 데이터 / DS-02 PyTorch·scikit-learn 모델 스크립트로 분리, 둘 다 웹 UI 업로드
+  - 핵심 엔티티: Model N─M Dataset(FR-001) / Run(사용자의 Run 클릭 1회 = 1 레코드, KPI-02 집계 기준) 1─N Evaluation(Model·Dataset·Metric 조합 결과, FR-003/004/005) — PK/FK 정의 완료
+  - 개인정보 없음 확정(NFR-005), 별도 마스킹/전송 제한 규칙 불필요
+  - 지표-문제유형(분류/회귀) 호환성 검증 규칙은 아직 미정 — 20-architecture-analysis 단계 설계 과제 (§3.2 #10, 경미)
 
 ## 6. 분석 단계 진행 판단
-- 결정: **GO** — 확신도 L 인 Must FR 이 없다(FR-001·004·005 는 M, FR-002·003 은 H. L 은 Could 인 FR-009·010 의 가정뿐). 충돌 3건(C1 마일스톤 vs NFR-001, C2 본문 비접근 vs JSONL 구조, C3 무상태 vs 성능)은 모두 사용자 의도를 바꾸지 않는 임시 가정으로 해소할 수 있고, 아키텍처 분석의 ADR(사용량 수집·루프 제어)에서 확정한다. 질문 13건은 분석과 병행해 답을 받으며, 특히 Q2·Q4·Q5·Q6 은 `/aidlc-plan` 전에 답이 필요하다.
+- **결정: GO**
+  - 확신도 L 인 Must FR 없음: FR-001~005 모두 01 v0.3 / 04 v0.3 반영으로 확신도 **H** 로 상향됨 (v0.2 당시 FR-002/003 의 L 은 형식·지표 확정으로 해소).
+  - 미해결 "충돌"(스펙 간 상충) 없음: v0.2 의 #1(FR 누락), #5(NFR-003 표현 차이), #6(개인정보 가정), #8(Run 단위 부재) 모두 01/04 v0.3 반영으로 해소됨(§3.1).
+  - 남아 있는 항목은 모두 비차단(non-blocking) 성격으로 재분류됨:
+    - §3.2 #7 (02§7 "06" 오타) — User 문서의 경미한 상호참조 오기, 동작/설계에 영향 없음, Agent 가 수정하지 않음.
+    - §3.2 #9 (Q9 일정 리스크) — 스펙 충돌이 아니라 실행 단계에서 관리할 일정 리스크로 재분류. 사용자가 이미 01§10 에 완화 방침(리스크 수용 + 필요 시 범위 축소)을 남겨 추가 해석 질문이 필요 없음. `/aidlc-plan` 단계에서 Must 우선순위로 관리 권고.
+    - §3.2 #10 (지표-문제유형 호환성 미정, 신규 발견) — Must FR 의 핵심 동작에는 영향 없는 구현 세부, 20-architecture-analysis 단계 설계 과제로 이관.
+  - 결론: 10-business-analysis 로 진행 가능. 다만 계획(`/aidlc-plan`) 단계에서 일정 리스크(Q9)를 Task 우선순위/범위 조정으로 관리할 것과, 20-architecture-analysis 단계에서 모델 호출 인터페이스(§3.1 #2) 및 지표-문제유형 호환성(§3.2 #10)을 구체화할 것을 권고한다.

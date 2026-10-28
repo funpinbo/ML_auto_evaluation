@@ -31,12 +31,12 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 ## 팀 특화 지침
 - 추측으로 요구를 늘리지 않는다. 모호하면 질문으로 남긴다.
 - 수용 기준은 qa 가 그대로 자동화할 수 있는 수준으로 쓴다.
-- 프로젝트: AI-DLC Monitor (로컬 단일 사용자 대시보드, M1 2026-11-06 / M2 2026-11-13). PO = funpinbo.
-- 스토리는 `workspace/project/stories/FR-xxx.md`, UAT·KPI 기록은 `workspace/project/uat/`, 사용 안내는 `monitor/README.md` 에만 쓴다.
-- KPI-01 은 고정 질문 3개(단계 / 현재 Task·팀 / 5시간 한도 %)를 첫 화면만으로 각 5초 이내 — 스톱워치 수동 측정. KPI-02 는 깨끗한 PC 리허설(Windows 1 + macOS/Linux 1).
-- A11(단계 판정)·A10(cascade 막힘)은 아직 가정이다. 확정 전에는 수용 기준에 '가정' 표시를 남긴다.
-- 01 §3 Out of scope(로그인, 원격 배포·CI/CD, 다중 저장소, 화면에서 문서 편집)를 넘는 결과는 리뷰에서 FAIL.
-- docs 팀이 없으므로 `/aidlc-docs` 산출물의 기능 설명 정확성 검토는 product 몫이다.
+- 프로젝트: ML_miniops — 1인 사용자가 로컬 PC(localhost) 에서 PyTorch/scikit-learn 모델과 CSV 데이터를 업로드해 N:M 으로 연결하고, 지표(Accuracy/F1/RMSE)를 선택해 Run 1클릭으로 자동 평가·시각화하는 도구. 목표 일정 "하루"(00§6 GO, 01§0). FR-001~005 전부 Must(10§6 MVP 정의) — 임의로 범위를 줄이지 않는다.
+- 스토리는 `workspace/project/stories/FR-001.md`~`FR-005.md`, UAT 는 `workspace/project/uat/` 에 쓴다. design/analytics 팀이 없으므로(40§2) 화면 흐름(10§4 사용자 여정 5단계)과 KPI-02 해석도 product 가 직접 작성한다.
+- MVP 성공 판단 기준(10§6): Given 모델 2개+데이터셋 1개 이상 업로드, When N:M 조합 생성+지표 선택+Run 클릭, Then Run 1건+Evaluation 레코드들 저장(KPI-02=완료 모델 수/입력 모델 수)+결과 화면에 지표 비교 그래프. 모든 FR 수용 기준은 이 흐름을 기준으로 쓴다.
+- 일정 리스크(Q9, 00§3.2#9): "하루" 안에 다 못 끝나면 FR-001+FR-002+FR-004(지표는 고정 기본값, 결과는 raw 표)만으로 "동작하는 최소 파이프라인"으로 인정하고 FR-003/FR-005 를 순서대로 추가하는 완화안이 이미 있다(10§6 Fallback). Must 지정(01§5) 자체는 바꾸지 않고 Task 순서/완성도만 조정한다.
+- 01 범위 밖(비매출/마케팅/CS/외부 파트너 — 10§2 "N/A" 처리 항목)을 넘는 결과는 리뷰에서 FAIL.
+- docs 팀이 없으므로 `/aidlc-docs` 는 오케스트레이터가 직접 수행한다(CLAUDE.md) — product 는 산출물의 기능 설명 정확성만 검토 보조한다.
 
 ## 반환
 호출자에게 짧게 보고: (작업) outcome, 변경 파일, 검증 결과, LTM 후보 / (리뷰) PASS·FAIL, 근거, 조치.

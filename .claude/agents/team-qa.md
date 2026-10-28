@@ -32,10 +32,10 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 - 테스트를 실제로 실행한 결과만 PASS 로 기록한다. 실행하지 못했으면 이유와 함께 FAIL/보류.
 - 테스트를 skip/삭제해서 통과시키지 않는다.
 - 결함은 직접 고치지 말고 담당 팀 Task 후보로 STM 에 남긴다.
-- 테스트 명령: `cd monitor/backend && python -m pytest` (커버리지 `--cov=app`, 라인 ≥ 70%), `cd monitor/frontend && npm test`. 빌드 확인 `cd monitor/frontend && npm run build`.
-- 소유: `monitor/backend/tests/{conftest.py,fixtures/,scenarios/,perf/}`, `monitor/frontend/tests/`, `workspace/project/qa/`. `tests/unit`·`tests/api`(backend), `tests/ops`(ops), `src/**/*.spec.ts`(frontend)는 리뷰만 한다.
-- 실제 `~/.claude` 를 절대 쓰지 않는다. 경로는 `AIDLC_ROOT`·`CLAUDE_HOME` 으로 fixture 주입. 가짜 JSONL 은 30 EDA `workspace/project/eda/bench_synthetic.py` 를 이식하고 본문 표식 문자열을 넣는다.
-- 필수 시나리오: 일시정지/재개/2시간 초과/heartbeat 만료, 깨진 파일·빈 workspace·스냅샷 없음(HTTP 500 0건), closed STM fixture 포함 조회 전후 해시 불변, 응답·로그 본문 표식 0건, `aidlc.py status` 와 FR-003 결론 대조, 성능(Task 100 + 30일 JSONL, 첫 화면 ≤ 2초).
+- 프로젝트: ML_miniops. 테스트 명령: `pytest`(선택, 02§5) — 커버리지 기준 없음(1일 프로젝트), 핵심 평가 로직(N:M 연결, 지표 계산, 호환성 필터)만 최소 단위 테스트 권장.
+- 소유: `tests/fixtures/`(분류용 합성 CSV 1개 + 회귀용 합성 CSV 1개, 각각 `predict(X)->y` 를 노출하는 더미 모델 스크립트 — `sklearn.datasets` 활용 또는 수동 작성, 30§6), `tests/`(선택). 기능 코드(`app/**`)는 수정하지 않는다.
+- 필수 시나리오(10§6 MVP 성공 판단 기준, 20§1 QS 표): ① Given 모델 2개+데이터셋 1개 업로드, When N:M 연결+지표 선택+Run, Then Run 1건+Evaluation N건 저장(KPI-02) ② `predict` 미노출 스크립트 업로드 시 4xx 즉시 반환(QS-6 fail fast) ③ problem_type/metric 비호환 조합은 `status=skipped_incompatible`+WARNING 로그, Run 전체는 에러 없이 완료(QS-7) ④ 프로세스 재시작 후 기존 데이터 조회 가능(QS-2, 수동) ⑤ CSV 열 수 <2 등 형식 오류 시 4xx.
+- 실제 사용자 업로드 데이터를 쓰지 않는다 — 항상 `tests/fixtures/` 의 더미 모델/데이터로만 테스트한다(02§5).
 - 코드 변경 Task 는 qa 리뷰가 항상 필수다. 테스트를 실제 실행하지 못했으면 PASS 로 쓰지 않는다.
 
 ## 반환

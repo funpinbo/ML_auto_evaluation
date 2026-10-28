@@ -1,6 +1,6 @@
 ---
-rev: 19
-last_merged_stm: 19
+rev: 20
+last_merged_stm: 20
 ---
 # Long-term Memory
 
@@ -11,237 +11,132 @@ last_merged_stm: 19
 ## 1. 결정 사항 (Decisions)
 | ID | 결정 | 근거 | 대안 | 출처 |
 |----|------|------|------|------|
-| D-01 | 단일 FastAPI 프로세스(127.0.0.1)가 /api/v1 REST·SSE 와 커밋된 Vue dist 를 함께 서빙, `run.py` 원클릭 실행 | 03 원칙 1, 가중 점수 125/140 | stdlib+vanilla(83), 수집기+SQLite(84) | (ADR-001) |
-| D-02 | 사용량은 `~/.claude/projects/<enc>/**/*.jsonl` 에서 `"usage":` 사전 필터 후 허용 필드만 복사, requestId 중복 제거(last-wins), 메모리 증분 캐시 | 30 EDA: 중복 57.95%, 4.4 ms/MB | Admin API(키 필요) | (ADR-002) |
-| D-03 | 한도 %는 statusLine 스냅샷(`workspace/memory/.monitor/claude-status.json`)에서, 전역 statusLine 은 체이닝 | 00 Q4 | 전역 설정 수정(02 §11 금지) | (ADR-003) |
-| D-04 | 루프 제어: 대시보드는 `.control.json` 만, CLI 는 `loop-status.json` 만 쓴다(파일당 쓰기 주체 1개). wait-resume exit 0/10/20/2 | 경쟁 조건 제거 | 단일 파일 공유 | (ADR-004) |
-| D-05 | 프론트 dist 를 저장소에 커밋, `.build-meta.json` 으로 신선도 검사 | 사용자 PC 에 Node 불필요 | 실행 시 빌드 | (ADR-005) |
-| D-06 | 변경 감지는 1초 stat 폴링, watchfiles 미사용 | 03 원칙 3 | watchfiles | (ADR-008) |
-| D-07 | AI-DLC 상태는 memory_cascade 의 읽기 함수만 사용, `aidlc.py status` 서브프로세스 금지(closed STM 을 아카이브하는 부작용) | 30 EDA 발견 | status 호출 | (ADR-009) |
-| D-08 | 응답 envelope `{data, meta}`, 에러 `{"error":{code,message}}`, Host/Origin 가드 | user/02 §6 | - | (ADR-011) |
-| D-09 | 루프 CLI exit code: 0 재개/정상, 10 계속 대기, 20 일시정지 상한 초과, 2 제어 파일 broken(계속 진행), 64 사용법 오류, 1 예기치 못한 예외(경고 후 계속). 루프를 멈추는 것은 일시정지 요청뿐. stdout 은 `AIDLC-LOOP <sub> <RESULT> k=v` 한 줄, 스킬은 exit code 로만 분기 | argparse 기본 2 와 broken 충돌 회피, 원칙 2 | - | (STM-0001, contracts/loop-cli.md) |
-| D-10 | 일시정지 상한은 일시정지 1회(episode) 기준 — paused_since 는 반복 wait-resume 을 넘어 유지, 재개 시 null. 활성 루프가 없으면 loop-check·wait-resume·loop-end 는 쓰지 않고 exit 0(NO_LOOP) | 00 Q5 해석 | 루프 전체 누적 | (STM-0001) |
-| D-11 | heartbeat 로 세션 생존을 판정하는 것은 paused 상태(120 s 기준)에서만. running 에서는 사이클 경계에서만 갱신되므로 판정하지 않음 | 오탐 방지 | - | (STM-0001) |
-| D-12 | SSE: 첫 프레임 `retry: 5000`, keep-alive 15 s, id 미사용, ready = 사용량 캐시 데우기 완료, alerts 는 memory/tasks/usage 발행 시 파생, 연결 상한 초과 503 `TOO_MANY_STREAMS`(신규 에러 코드), 프론트는 45 s 무프레임 시 재연결 | ADR-011 보완 | - | (STM-0001, contracts/sse-events.md) |
-| D-13 | `transcript_dir_name` 은 `^(?!\.{1,2}(?![\s\S]))[A-Za-z0-9._-]{1,255}(?![\s\S])` 로 제한, reader 는 재검증 + resolve 결과가 `~/.claude/projects/` 직속 하위인지 확인(실패 시 폴백, 값 없이 코드만 기록), API 응답·SSE·로그 노출 금지 | security 리뷰 FAIL 조치 | 관대한 reader | (STM-0001, contracts/README §2·§3) |
-| D-14 | 비-JSON Content-Type 의 변경 요청도 403 `FORBIDDEN_ORIGIN` 으로 거부 (415 는 계약 위반=FAIL) | 20 §QS-05 가 명시, 20 §8 에러 코드는 닫힌 집합(415 없음), ADR-011 §5 가 같은 항목에서 묶어 서술 | 415 | (STM-0003, architecture 리뷰) |
-| D-15 | Origin 헤더 없는 로컬 POST 는 잔여 위험으로 수용 | ADR-011 이 토큰 인증을 기각 | 토큰 인증 | (STM-0003, threat-model.md) |
-| D-16 | 테스트는 실제 `~/.claude` 를 쓰지 않는다: autouse 로 `HOME`/`USERPROFILE` 을 임시 경로로 바꾸고 `AIDLC_ROOT`/`CLAUDE_HOME` 을 지우며, 앱 경로 주입은 `app_env` 환경 변수로만 (CON-06) | user/02 §5, privacy.md §7 | 실제 기록 사용 | (STM-0004) |
-| D-17 | 사용량 집계 검증은 3자 대조: 생성기 기대값(`JsonlManifest.expected_buckets`) ↔ 독립 오라클(`reference_parser.aggregate`) ↔ 앱 수집기 | 오라클 오류 차단 | 생성기만 신뢰 | (STM-0004) |
-| D-18 | Host 가드는 호스트+포트 정확 일치(`127.0.0.1:<port>`, `localhost:<port>`, 소문자화), 자체 순수 ASGI `HostGuardMiddleware` 를 가장 바깥에 둔다. TrustedHostMiddleware 미사용(포트 무시). `[::1]`·끝 점·포트 생략·빈 Host 거부, 메시지에 받은 Host 미포함 | 03 §2 보안 2순위, DNS rebinding, QS-05 | TrustedHostMiddleware | (STM-0005, ADR-011 §4) |
-| D-19 | `settings.port` 가 uvicorn 바인딩·Host 가드·Origin 가드의 단일 출처, 포트 0 금지 | 불일치 방지 | 각자 계산 | (STM-0005, ADR-011 §4) |
-| ~~D-20~~ | HTTP 에러 코드는 ADR-011 §9 의 닫힌 집합(VALIDATION_ERROR, NOT_FOUND, BAD_HOST, FORBIDDEN_ORIGIN, NO_ACTIVE_LOOP, CONTROL_WRITE_FAILED, INTERNAL_ERROR, TOO_MANY_STREAMS). 415 미사용 | 계약 고정 | 열린 집합 | (STM-0005, ADR-011 §9) → D-26 으로 대체 (STM-0009) |
-| D-21 | FR-001 단계 판정(A11 확정안, PO 화면 리뷰 전까지 assumption): 상태 4종(완료/진행/대기/확인 불가 — 확인 불가는 판정 파일이 깨졌을 때만), 단계 독립 판정, 현재 단계 = 완료가 아닌 최소 번호, 단계 4 완료 = tasks `rev ≥ 1` + Phase 에 Task ≥ 1, 단계 5 완료 = 전 Phase `[x]` + 미처리 cascade 없음 + STM 비활성, 단계 6 완료 = docs Gate PASS + `docs/README.md` 존재 | 템플릿 직후 오판 방지(실행 확인) | Phase 존재만 확인 | (STM-0006, stories/FR-001 §2) |
-| D-22 | FR-005 화면 라벨 6종(V1~V6)과 종료 사유 문구는 stories/FR-005 §2.1·§2.3 이 단일 기준. qa 는 문구 포함 여부로 검증 | 문구 흩어짐 방지 | - | (STM-0006) |
-| D-23 | KPI 측정 규칙: KPI-01 타이머 = 질문 읽기 시작~답, 첫 화면 = 스크롤·클릭 없는 영역(창 크기 기록), 정답은 파일에서 직접(`aidlc.py status` 금지). KPI-02 타이머 = 실행 동작~상단 행 표시, 다운로드 제외 | 측정 재현성 | - | (STM-0006, uat/uat-checklist) |
-| D-24 | 테스트 홈 격리 3겹: `pytest_configure` 세션 치환 + autouse 테스트별 치환 + `sys.addaudithook` 가드(`RealHomeAccessError`). 가드는 제거 불가라 `enabled` 플래그로 켜고 끄며 음성 테스트는 `home_guard.expect()` 사용. 위반은 예외 전에 기록되어 삼켜도 teardown 에서 드러남 | D-16 강화, security 리뷰 | function 범위만 | (STM-0007) |
-| D-25 | Host·Content-Type 검증 케이스의 단일 정의는 privacy.md §5.1(H-01~H-22: 4개 대상 GET/POST/SSE/dist)·§5.2(C-01~C-11: pause·resume). Content-Type 은 미디어 타입(첫 `;` 앞)이 대소문자 무시로 `application/json` 과 정확히 일치, 422 검증보다 먼저 403. 잘못된 Host 는 403·404 보다 먼저 400. Host 헤더 개수는 가드가 `scope["headers"]` 에서 판정 | ADR-011 정확 일치 규칙의 구체화 | ADR 문구만 | (STM-0008) |
-| D-26 | 에러 코드 닫힌 집합 9개 = D-20 + `METHOD_NOT_ALLOWED`(405, OPTIONS 포함, `Allow` 헤더, CORS 없음). 기본 `{"detail":...}`·평문 404/405 본문 금지. `/api` 아래 모르는 경로 404, RequestValidationError 422, 기타 프레임워크 4xx → 422, 5xx·미처리 예외 500. `/api` 밖 모르는 경로 404(SPA 폴백 없음) | 상태↔코드 1:1 | 405 를 404 로 접기 | (STM-0009, ADR-011 §9) |
-| D-27 | scope 처리: http 검사, websocket 은 accept 없이 close 1008(JSON 에러 포맷의 유일한 예외), lifespan 통과, 기타 무시 | 기본 거부 | - | (STM-0009, ADR-011 §10) |
-| D-28 | SSE `/api/v1/events` 는 GET 만(HEAD 포함 나머지 405 `Allow: GET`, Starlette 자동 HEAD 를 backend 가 막아야 함). 출처 검사는 **경로 기준**(메서드 무관)으로 라우팅·슬롯 획득 전: Origin 불일치/null, 또는 `Sec-Fetch-Site` 가 strip·소문자 정확 일치로 `same-origin`/`none` 이 아니면 403. `Origin`·`Sec-Fetch-Site` 복수 헤더 403. 400·403·405 는 슬롯 미소모. 다른 GET 에는 출처 검사 미적용(SOP·읽기 전용) | SSE 슬롯 소모(가용성) 방지, security 재리뷰 PASS | GET 만 검사(HEAD 우회) | (STM-0009, ADR-011 §11) |
-| D-29 | 처리 순서: scope → Host 400 → 출처·미디어 타입 403 → 라우팅 404/405 → 검증 422 → 핸들러. events 경로는 400 → 403 → 405 → 503 → 스트림 | 정보 노출 최소 | - | (STM-0009, ADR-011 §12) |
-| D-30 | 가드 체인은 `add_middleware` 가 아니라 FastAPI 서브클래스 `MonitorApp.__call__` 에서 감싼다: HostGuard → OriginGuard → SecurityHeaders → ErrorShield (ServerErrorMiddleware·FastAPI 0.161 텔레메트리보다 바깥) | ADR-011 §4 "가장 바깥" 의도 | add_middleware | (STM-0010) |
-| D-31 | 정적 dist 는 `app.router.default` + `redirect_slashes=False`: `/api`·`/api/...` 는 메서드 무관 404, 그 밖은 파일 있으면 GET/HEAD 서빙·다른 메서드 405 `Allow: GET, HEAD`, 없으면 404(SPA 폴백 없음), dist 없으면 `/` 만 안내 HTML. 세그먼트 `.`/`..`/숨김/`\`/NUL/`:` 거부 + `resolve(strict=True)` 후 dist 하위 확인 | 405 가로채기 회피, 경로 이탈 차단 | `Mount("/")`, StaticFiles(html=True) | (STM-0010) |
-| D-32 | 기본 포트 8765, 변경은 `AIDLC_MONITOR_PORT` 또는 `python -m app --port N`(우선)만. 선행 0·0·범위 밖 거부, 바인딩 `127.0.0.1` 상수(호스트 옵션 없음) | ADR-001, D-19 | - | (STM-0010) |
-| D-33 | 패널 규칙: `meta.warnings` 가 하나라도 있으면 `partial`, 파일 없음 = 값 `null` + 경고, 판정 파일 깨짐 = 해당 값만 `null`/`unknown`. `## Blocked` 는 줄의 첫 T-ID 만 막힘. FR-001 단계 1 의 "00 미작성 0개" 는 project Gate 출력 줄을 쓴다(플레이스홀더 규칙 단일 출처) | FR-001~003 AC | - | (STM-0010) |
-| D-34 | health 계약: envelope `data = {status:"ok", app:"aidlc-monitor"(Literal 고정), version, sources{workspace, claude_projects, statusline, control: ok|missing|stale|unreadable}, dist: ok|missing, usage_warming{state: not_started|warming|done|unknown, progress}}`. statusline 10분 초과 = stale, `.control.json` 없음은 정상(경고 없음). 소스 판정은 `os.stat`/`os.access` 만(열기·나열·쓰기 없음). 런처 중복 실행 판정은 HTTP 200 + `data.app == "aidlc-monitor"`, 400 BAD_HOST 는 포트 불일치 | ADR-001 §4, ADR-005 §3 | - | (STM-0011, T-006) |
-| D-35 | 로깅: stderr 핸들러 1개(재호출 시 중복 없음), `%(asctime)s %(levelname)s %(message)s`, 줄바꿈→공백, 예외는 `(ExceptionType)` 만(traceback 없음), uvicorn access log 비활성(직접 `uvicorn app.main:app` 실행 포함), 2차 방어로 경로·UUID·ID·키·Bearer 가림. 모든 로그 호출부는 예외 타입만 남긴다 | user/02 §7, 20 §6 | access log 정제 | (STM-0011) |
-| D-36 | 런처: `run.py`(표준 라이브러리) + `run.sh`(python3/python/py 실제 실행 탐지, LF) + `run.bat`(`py -3`→`python`, Store 별칭은 실행 검사로 배제, CRLF, ASCII 메시지). `<venv python> -m app --port N`(cwd monitor/backend, 호스트 인자 없음), 자식 env 에서 `AIDLC_MONITOR_PORT`·`PIP_USER`·`PYTHONHOME` 제거, 최대 10개 포트, 마커 `.venv/.requirements.sha256`(설치 전 삭제·성공 후 기록), `--no-cache-dir`, health 최대 20 s 대기, 정상 종료 코드 {0,-2,-15,130,143,0xC000013A}, SIGTERM 전달 후 5 s → terminate → kill | ADR-001 §2.3~2.5 | - | (STM-0012) |
-| D-37 | **가정(PO 미답 Q-P3)**: run.bat 은 실패(exit≠0) 시 `pause` 로 창 유지, 정상 종료 시 닫힘. 다르면 run.bat 끝 3줄만 수정 | 권장 기본값 | - | (STM-0012) |
-| D-38 | 의존성: httpx==0.28.1 유지(httpx2 전환은 ops 로거 수정 후), pip-audit 은 dev 의존성이 아니라 릴리스 전 일회용 venv 에서 실행, mypy==2.4.0 dev 추가. user/02 §9 는 직접 채택 판단에 적용하고 전이 예외는 ADR-006 Decision 5 표로 기록(경계 밖 7건·라이선스 예외 3건, 전 36 핀 PyPI 실측) — 전이 적용 여부는 사용자 확인 대기(Q-P5) | ADR-006 Decision 2·5 | 즉시 httpx2 | (STM-0012) |
-| D-39 | seq 발급: 대시보드가 쓸 때마다 `next_seq = max(prev, baseline) + 1` (prev = `.control.json` seq, 없음/broken 이면 0; baseline = `loop-status.json` baseline_seq, 없음/위반이면 0). 두 파일은 매번 새로 읽고 캐시하지 않는다. 대시보드는 loop-status 를 읽기만(단일 작성자 유지). CLI 는 변경 없음 — `(seq > baseline_seq, state)` 만 본다. 제어 파일 **삭제는 broken 이 아니라 없음(정상, 대기 유지)**, broken 은 exit 2(계속 진행) | I-16, D-04, FR-005 AC-18 | CLI 가 seq 변경 감지, 시각 기반 id | (STM-0013, ADR-004 Decision 1.1) |
-| D-40 | 엄격 정수: seq·baseline 은 JSON 정수 리터럴만(bool·`7.0`·지수·NaN/Infinity 거부), 범위 0/1~2^53-1, CLI·대시보드가 같은 술어(`type(x) is int` + 범위, parse_int 16자리 초과 거부, parse_constant 예외 → broken, 예외는 밖으로 나가지 않음). 상한 초과 next_seq → 쓰지 않음 + 500 `CONTROL_WRITE_FAILED`(고정 문구), 기존 파일 보존. 쓰기: "두 파일 읽기 → 계산 → os.replace" 를 프로세스 락으로 직렬화, 락 획득 2 s 타임아웃, 락 안 os.replace 재시도 5×50 ms, 임시 파일 finally 삭제 | security 리뷰 FAIL 조치, D-26 | 스키마만 신뢰 | (STM-0013, loop-cli §2.1·§7.1·§7.3) |
-| D-41 | **R-01 완화**: 서브에이전트 Bash 도구(Linux)에서 `wait-resume --max-wait 120/300/540` 이 끊김 없이 exit 10 반환(120.13/300.24/540.37 s), 대기 중 resume 을 0.93 s 만에 감지(exit 0), `paused_since` 는 호출 간 유지. 01 §10 의 같은 세션 대기 설계 유지, 기본 540 s 유지, 후퇴안(대안 B) 불필요. **단서**: 사용자 메인 세션·Windows 미측정 → T-014 UAT 재측정. **STM-0019 현황: T-014 가 partial 로 끝나 단서는 여전히 열림 → `[product] UAT 실기 (사용자 PC)` Task 의 R-1~R-3 에서 재측정** | ADR-004 R-01 | 대안 B(루프 종료+재입력) | (STM-0014, STM-0019) |
-| D-42 | 엄격 정수 술어는 CLI(stdlib 단독)와 대시보드에 **사본**으로 두고 `test_loop_strict_parity` 교차 테스트로 판정 일치를 강제 — CLI 를 앱과 결합하지 않기 위함(ADR-009, 원칙 2) | 결합 회피 | 공유 import | (STM-0014, architecture 승인) |
-| D-43 | 제어 API: loop-status 없음 = 상태 `ended`(V1) + `meta.status=empty`; pause 는 활성 루프 없으면 409 `NO_ACTIVE_LOOP`, resume 은 항상 200; resume 본문은 `{}` 만(그 외 422); 대시보드는 디렉터리를 만들지 않음(workspace/memory 없으면 500 CONTROL_WRITE_FAILED). 쓰기는 같은 디렉터리 mkstemp → fsync → os.replace, 심볼릭 링크는 링크만 교체 | FR-005, 원칙 2 | - | (STM-0014) |
-| D-44 | `/aidlc-run` 루프 경계(SKILL.md): 시작 `loop-start N` → 각 사이클 7단계(cascade) 뒤 `loop-check <done>`(마지막 사이클 뒤엔 호출 안 함) → exit 10 이면 `wait-resume` 반복(Bash timeout 600000, 기본 540 s) → 끝에 `loop-end done|blocked|no_task --done n`. exit code 로만 분기(`; echo "exit=$?"`): 0 계속/재개, 10 대기, 20 상한 초과 → loop-end 생략하고 보고(CLI 가 ended·pause_timeout 기록), 2·1 경고 후 계속, 64 → `loop-end blocked --done <i>` 후 중단·버그 보고. 두 파일 쓰기 금지, `run_in_background` 금지, Python 은 python3 → python → py -3 실제 실행 확인 | ADR-004 Decision 3 accepted | - | (STM-0015) |
-| D-45 | 대기 중 세션이 사라지면 화면은 V6 "세션 없음" 고정. 재개를 누를 필요 없이 `/aidlc-run <남은 수>` 만 실행 — 새 loop-start 의 baseline 이 남은 요청을 무효화. 사이클 진행 중 세션이 닫히면 V3 "실행 중" 으로 남는다(D-11) | 운영 절차 | - | (STM-0015, ops 리뷰) |
-| D-46 | 사용량 수집: 폴더 해석 = 인코딩 규칙(대소문자 무시) → 스냅샷 힌트(D-13 패턴 재검증 + `projects/` 직속 하위) → usage 줄 cwd 스캔. `**/*.jsonl` 재귀(30일), 증분 커서(잘림·교체·삭제 시 0부터), `"usage":` 사전 필터 → 허용 필드만 복사, requestId 는 메모리에 해시로만, 전역 last-wins, UTC 시간 버킷(모델×sidechain), lifespan 에서 데우기 스레드 시작(`create_app` 은 파일 I/O 없음, 최근 파일 우선). 패널 상태: 스냅샷 없음 ok+안내, 오래됨/깨짐 partial, 폴더 없음 partial/empty(`PROJECT_DIR_NOT_FOUND`), 깨진 줄은 `skipped_lines` | ADR-002, 30 EDA | - | (STM-0016) |
-| D-47 | **모든 JSONL·스냅샷 열기는 `services/usage/safe_open.open_regular` 하나로**: lstat(일반 파일·비 symlink·nlink==1·expect 일치) → `os.open(O_RDONLY\|O_NOFOLLOW\|O_NONBLOCK)` → fstat(S_ISREG·dev/ino 동일·nlink==1), 거부 시 fd 닫고 None. 하드 링크·FIFO·symlink·경계 밖은 고정 문구 WARN 건수로만 기록 | security 재리뷰 PASS(strace openat 감사) | 스캔 단계 검사만 | (STM-0016) |
-| D-48 | statusLine: `bash "${CLAUDE_PROJECT_DIR:-.}/aidlc/hooks/statusline.sh"`(refreshInterval 30, 프로젝트 `.claude/settings.json` 의 `statusLine` 키만). 스냅샷 9필드(session_hash = sha256 앞 12 hex, transcript_dir_name 한 세그먼트 재검증), 원자적 저장 후 전역 statusLine(`$CLAUDE_CONFIG_DIR` 또는 ~/.claude/settings.json 의 statusLine.command 만 읽음) 같은 stdin 으로 체이닝, 2 s 후 프로세스 그룹 kill, 자기 참조 생략, 항상 exit 0, Python 없으면 빈 줄. 출력 예: `AI-DLC 5h 24% · 7d 41% · $0.12` | ADR-003, Q4 | 전역 설정 수정 | (STM-0016) |
-| D-49 | SSE: `EventHub` 1개가 1초 tick(`collector.refresh` → `Watcher.poll`)을 계산해 연결별 큐(최대 64, 넘치면 오래된 것 버림)로 방송, 구독자 0 이면 tick 작업 취소. topic 서명 = stat(mtime_ns,size), `control` 은 화면 판정(view·버튼)까지 → heartbeat 120 s 경계 감지. 상한 8 → 503, GET 만(`APIRoute`) | sse-events.md, ADR-008 | 연결마다 poll(변경을 서로 빼앗음) | (STM-0017) |
-| D-50 | 프론트: Vite 8 + Vue 3.5 + ECharts 6(필요 모듈만 `echarts/core` 등록) + TS 5.9 + eslint 10 flat + vitest 5(jsdom). `npm run build` = vue-tsc → vite build → `scripts/write-build-meta.mjs`(python3→python→py 로 `check_dist_fresh.py --write`). SSE 실패: 브라우저 자동 재연결 중엔 5초 폴링, 닫힘(503)이면 폴링 + 30초 후 SSE 재시도. 45 s 무프레임 감시는 하지 않음(EventSource 가 주석 프레임을 노출하지 않음) | ADR-005, sse-events.md §1 | - | (STM-0017) |
-| D-51 | **빠른 진행 모드(사용자 합의 2026-10-24)**: 남은 P1 은 Task 당 다중 리뷰 Agent 대신 로컬 게이트(`monitor/tools/check.py`) 전체 PASS + 실서버 E2E 로 리뷰 게이트를 대신하고, 막지 않는 지적은 백로그로. 연관 Task 는 한 STM 에서 묶어 처리 가능 | 진행 속도 피드백 | Task 당 리뷰 2~4팀 | (STM-0017) |
-| D-52 | perf 테스트(`tests/perf`, marker `perf`)는 `-m` 식에 `perf` 가 없으면 conftest 가 수집 단계에서 제외(skip 이 아니라 deselect) → 기본 실행·`check.py` 게이트에서 빠지며 check.py 무변경. 켜기 `-m perf`, 전체 `-m "perf or not perf"` | 게이트 시간 보호(perf 약 11 s) | skip 처리, 게이트 포함 | (STM-0018) |
+| D-01 | 단일 FastAPI 프로세스(동기 REST, SQLite 저장, in-process 모델 로더/평가 실행기) 채택 | 03 품질속성 가중합계 115점 최고 (개발속도 1위·유지보수성 2위 기준) | 모놀리스+자식프로세스 격리(96점) / 모놀리스+Celery·Redis(76점, 03§4 금지기술 위반으로 실격) | (ADR-001) |
+| D-02 | 모델 호출 계약: 사용자 업로드 스크립트는 모듈 전역 `predict(X) -> y` 를 노출해야 함. CSV 는 "마지막 컬럼=라벨" 컨벤션 고정 | PyTorch/scikit-learn 프레임워크별 분기 로직을 평가 엔진에서 제거해 "하루" 일정 리스크(Q9) 완화 | 프레임워크별 어댑터/플러그인 시스템 | (ADR-002) |
+| D-03 | 지표-문제유형 호환성: `Model.problem_type`(사용자가 업로드 시 직접 지정, 모델 출력 추론 아님) + `METRIC_COMPATIBILITY`(classification→{accuracy,f1}, regression→{rmse}) + `Evaluation.status`(success/skipped_incompatible/error 3종) | 추론 방식은 신뢰성 부족(임의 모델 출력만으로 분류/회귀 구분 불가) 및 과설계, 1인 로컬 도구라 사용자 입력 신뢰가 타당(03 단순함 우선) | (a) 모델 실행 후 출력 형태로 추론 (b) 호환성 검사 없이 전부 허용 후 예외처리만 — 둘 다 보류 | (ADR-003, 30§5.2) |
+| D-04 | KPI-02 산식 확정: 분자(완료 모델 수) = Run 내 `status='success'` 레코드가 1개 이상 있는 모델 수. `skipped_incompatible`/`error` 만 있는 모델은 분자에서 제외하되 분모에는 포함(레코드 보존) | 비호환 스킵을 "완료"로 잘못 집계하면 KPI-02 신뢰도 저하 | skipped_incompatible 도 완료로 집계 | (ADR-003) |
+| D-05 | 서버는 `127.0.0.1` 에만 바인딩, LAN/외부 네트워크 노출 없음 | NFR-003, 사용자가 Q6 에서 "localhost" 로 명확화 | `0.0.0.0` 바인딩 후 방화벽으로 제어 | (user/01§6 NFR-003) |
+| D-06 | 개발 표준: Python 3.12 + FastAPI + pip/venv, 프론트는 Jinja2 + 바닐라 JS(Node 빌드 없음), main 직커밋(PR/리뷰 없음), 테스트 커버리지 기준 없음, 인증/인가 없음 | "하루" 목표·1인 프로젝트, 과설계 금지(03 원칙 1) | TypeScript SPA 프레임워크, 엄격한 PR 리뷰 프로세스 | (user/02§1·§4·§5·§6) |
+| D-07 | FR-003/FR-005 의 Phase 경계를 stories 수용 기준에 고정: P1=호환성 필터 없음·지표 전체 노출·기본 비교 그래프(tasks.md T-015/016/017/018), P2=호환성 필터 활성화·상관관계 그래프(T-021/022/023/024). 이 경계는 tasks.md 에 이미 확정된 계획을 그대로 인용한 것 | tasks.md 의 기존 Phase 분리와 stories 의 AC 가 어긋나면 혼란 발생 — 단일 기준 필요 | P1/P2 구분을 story 에 명시하지 않고 설계문서 참조로만 남김 | (STM-0001) |
+| D-08 | `app/` 패키지 스캐폴드(app/api, app/eval, app/web)를 20§4 컴포넌트 표·02§3 디렉토리 규칙과 1:1 대응하도록 생성. API 계약의 단일 출처는 `20-architecture-analysis.md` §5 이며 `workspace/project/contracts/` 디렉토리는 만들지 않는다 | 02§6(OpenAPI 는 FastAPI 자동생성 문서 사용), architecture 팀 charter §2 | `contracts/` 디렉토리에 계약을 별도 문서로 중복 작성 | (STM-0002) |
+| D-09 | SQLite 스키마 DDL 은 `app/eval/repository.py` 상단의 `SCHEMA_DDL` 상수(문자열 블록, 별도 마이그레이션 프레임워크 없음) + `init_schema(conn)` 함수로 확정. 5테이블(model/dataset/model_dataset_link/run/evaluation) 모두 `CREATE TABLE IF NOT EXISTS`(멱등), enum 5종 CHECK 제약(framework/problem_type/problem_type_source/metric/status), 인덱스 3개(`idx_evaluation_run_status`, `idx_evaluation_model`, `idx_model_dataset_link_dataset`) | 30§5.1 ERD·ADR-003 을 DDL 로 1:1 반영(설계 결정 변경 없어 신규 ADR 불필요), KPI-02(D-04) 집계 쿼리가 `idx_evaluation_run_status` 를 사용하도록 색인 설계, dba charter(ORM 없이 표준 `sqlite3`, 쿼리 함수는 backend 소유 T-009) | ORM 도입 / 별도 마이그레이션 프레임워크 | (STM-0003, architecture·qa 리뷰 PASS; T-009 담당 "backend" 표기는 STM-0010 에서 architecture 가 의도적 설계(예외 아님)로 공식 재승인) |
+| D-10 | 테스트 케이스 ID 규칙을 `TC-<FR 3자리>-<AC 2자리>`(예: TC-001-01) 로 고정, E2E 종합 케이스는 `TC-E2E-01` 로 별도 네임스페이스 | FR×AC×TC 추적표(test-strategy.md)와 구현 Task 의 qa 리뷰(STM §7)가 동일 ID 체계로 근거를 인용할 수 있어야 함 | FR 별 순차 번호만 사용(AC 매핑 불명확) | (STM-0004) |
+| D-11 | `tests/fixtures/dummy_regressor.py` fixture 는 scikit-learn(LinearRegression) 으로만 구현하고, `framework=pytorch` 케이스(TC-002-02)에도 그대로 재사용한다 | ADR-002 Decision #3(`framework` 은 메타데이터로만 보관, 평가 엔진이 프레임워크별로 분기하지 않음) — 실제 torch 설치 불필요 | 프레임워크별 별도 fixture(pytorch 모델 포함) 작성 | (STM-0005) |
+| D-12 | 리포 루트 `requirements.txt`(ML_miniops `app/`+`tests/fixtures/` 전용) 신설: `pandas==3.1.0`/`scikit-learn==1.9.1`/`pytest==9.1.1` + pip freeze 기준 전이 의존성 전부 `==` 고정, torch 는 주석 처리된 선택 항목(D-11 근거). venv 구성 절차는 별도 문서 없이 이 파일 헤더 주석에 기술(기존 `monitor/backend/requirements-dev.txt` 와 동일 관례) | I-05 해소(사전조건 충족), `monitor/backend/requirements*.txt`(Monitor 메타 도구용)와는 서로 무관한 별개 파일임을 명시 | 별도 venv 절차 문서 작성 | (STM-0006) |
+| D-13 | 로컬 게이트 명령은 경로를 `app tests` 로 명시해 실행한다 — `ruff format --check app tests && ruff check app tests`, `pytest tests` (cicd charter §10 원문의 경로 없는 `.`/무경로 대신). 동시에 `requirements.txt` 에 `ruff==0.17.2` 추가(전이 의존성 없음, 02§9 승인 절차 불요) | 이 저장소에 ML_miniops 와 무관한 별도 프로젝트(`monitor/`, `aidlc/`, `workspace-exam/`)가 공존 — 경로 없이 실행하면 무관한 파일의 포맷/린트 위반이 섞이고 `pytest` 는 `monitor/backend/tests` 수집 중 미설치 의존성(fastapi/pydantic/jsonschema)으로 전부 깨짐(실측 재현) | charter §10 원문 그대로(경로 없음) 유지 | (STM-0007) |
+| D-14 | ops 산출물은 단일 문서 `workspace/project/ops/runbooks.md` 로 통합(로그 레벨 매핑표+체크리스트, QS-2 재시작 복구 절차, 로컬 실행 환경/포트 대응). slo.md·알림 규칙·대시보드·용량계획은 작성하지 않고 "N/A(목표 없음)"로 명시 | ops charter §3, 03§7(관측성: 콘솔 로그만, 메트릭/트레이스/알림 불필요) | 산출물별 별도 파일 분리 | (STM-0008) |
+| D-15 | ADR-004: 동일 (model, dataset) 재업로드 정책 — `POST /models`/`POST /datasets` 는 항상 신규 레코드(새 UUID)를 생성하고 매칭/UPDATE 로직은 두지 않는다. 기존 DDL(D-09, model/dataset 는 독립 PK·name/path UNIQUE 없음)이 이미 전제하던 동작을 공식 승인. `model_dataset_link` 복합 PK 는 "링크" 중복 차단만 유지(변경 없음) | user/03 원칙1(과설계 금지)·원칙3(결과 비교 용이성=재현성 보존) — "갱신" 대안은 매칭 키 정의·과거 Run 의 model_id 참조가 조용히 다른 파일을 가리키게 되는 재현성 훼손 리스크 | (a) 기존 레코드 UPDATE(이름/경로 매칭) (b) UNIQUE 제약+upsert — 둘 다 과설계·재현성 리스크로 기각 | (STM-0012, product 리뷰 PASS, I-02 해소) |
+| D-16 | ADR-005: ML_miniops 실행 엔트리포인트를 저장소 루트 `run.py` 대신 `app/__main__.py`(`python -m app [--port N]`, host `127.0.0.1` 고정, 기본 포트 8000)로 확정. 저장소 루트 `run.py`/`run.sh`/`run.bat` 는 AI-DLC Monitor(포트 8765) 전용으로 그대로 유지, ML_miniops 설계에서는 건드리지 않음 | user/03 원칙1(단순함·과설계 금지, 신규 루트 파일보다 기존 `app/` 패키지 재사용), 02§3(디렉토리 규칙), Monitor 자신의 `run.py` 도 이미 `python -m app --port N` 패턴으로 `monitor/backend/app` 구동(일관성), 20§2 가중합계: `python -m app` 117점 > 신규 루트 스크립트 98점 | 신규 루트 스크립트(예: `serve.py`) / Monitor `run.py` 를 옮겨 재사용(범위 밖 원칙 위반으로 비교 제외) | (STM-0013, ops 리뷰 PASS, I-08/I-12 설계 수준 해소) |
+| D-17 | `app/eval/repository.py` 쿼리 함수(Model/Dataset/Link/Run/Evaluation CRUD) 구현 완료. Model/Dataset 는 매번 `uuid.uuid4()` 로 신규 레코드 생성(ADR-004/D-15), ID 는 Repository 내부에서 발급(API 라우터가 중복 생성하지 않음). `create_link`/`create_evaluation` 은 참조 대상 존재를 애플리케이션 레벨에서 선검증해 `NotFoundError` 를 올림(PRAGMA foreign_keys 와 무관하게 FR-001 AC-5 보장, T-029 와 상호 보완). 동일 링크 중복 생성은 `IntegrityError` 그대로 전파(흡수하지 않음 — 중복 연결 허용 여부는 story 상 미정) | FR-001/FR-004 AC, backend charter §2(쿼리 구현부 소유) | ID 를 API 라우터에서 발급 / 중복 링크를 Repository 가 조용히 무시 — 둘 다 소유 경계·미정 정책을 침범해 기각 | (STM-0014, qa 리뷰 PASS) |
+| D-18 | `app/eval/repository.py` `get_connection()` 에 `conn.execute("PRAGMA foreign_keys = ON")` 추가(sqlite3.connect 직후, init_schema 전) — 코드베이스에서 커넥션을 직접 여는 유일한 지점이라 "커넥션 오픈마다" 요구를 이 한 곳으로 충족. D-17(애플리케이션 레벨 NotFoundError 선검사)과 중복이 아닌 DB 레벨 2차 방어선 | LTM I-03, FR-001 AC-5/FR-004 참조 무결성 | — | (STM-0015, qa 리뷰 PASS) |
+| D-19 | `POST /models`(FR-002) 구현 — `app/eval/model_loader.py`(`validate_predict_contract`: importlib 동적 로드 + hasattr/callable 검사, ADR-002 1단계) + `app/api/models.py`(422+ERROR 로그로 계약 위반 처리, 성공 시 `repository.create_model`). `app/api/__init__.py` 에 FastAPI `app` 인스턴스 최초 생성 + `include_router` 패턴 확정(이후 T-011/T-013/T-015 가 재사용). `get_connection()` 에 `check_same_thread=False` 추가(FastAPI 동기 의존성 스레드풀 대응, 동시성 제어 추가 아님, NFR-004 충돌 없음). `requirements.txt` 에 fastapi/uvicorn/httpx/python-multipart 추가(02§9 승인 불요, backend 직접 갱신) | FR-002 AC-1/2/4/6, 20§4 컴포넌트 표, ADR-002 | — | (STM-0016, qa/cicd/product/architecture/security 리뷰 전원 PASS) |
+| D-20 | 업로드 파일 저장 경로 생성 시 `_safe_storage_name()` 패턴 확정: `Path(filename or "").name` 으로 베이스네임만 취하고 빈 값/`.`/`..` 는 고정값+uuid 접두어로 대체 → 최종적으로 `dest.resolve().is_relative_to(target_dir.resolve())` 로 재확인. 모든 업로드 저장 라우터(향후 `app/api/datasets.py` T-011 포함)에 적용할 공통 패턴 | security 리뷰 FAIL(CWE-22 경로 이탈, `file.filename` 미정제) 조치 — 클라이언트 입력은 신뢰할 수 없음 | — | (STM-0016, security 재검증 PASS; T-011 에서 `app/api/datasets.py` 에도 동일 코드로 복제 재사용·security 재검증 PASS, STM-0018) |
+| D-21 | API 계약에 `GET /models`(200 `[{model_id,name,framework,problem_type}]`), `GET /datasets`(200 `[{dataset_id,name}]`) 를 신규로 추가 — Jinja2 Web UI 가 Repository 를 직접 조회하는 대안(product 초기 제안)은 20§4 다이어그램(`webui`→`repo` edge 없음)·frontend charter §2/§6(JSON 계약 소비만, API 구현 안 함)과 충돌해 기각. `GET /links`·`GET /runs/{id}/results` 와 같은 기존 "POST 와 짝을 이루는 조회" 스타일의 단순 확장이라 신규 ADR 불필요 | qa test-cases/FR-002.md TC-002-01/03 이 목록 조회를 요구(20§5 계약 표의 실제 공백), 20§4 컴포넌트 의존, frontend charter | Web UI 가 Repository 직접 조회(20§4 diagram·frontend charter 위반으로 기각) | (STM-0016, architecture 리뷰, product 초기 제안과 상충해 명시적으로 기각됨; T-011 에서 실제 구현·테스트로 계약과 1:1 일치 확인, STM-0018) |
+| D-22 | `20-architecture-analysis.md`§5 표에 D-21 결정을 실제로 반영 — "모델 목록 조회"(`GET /models`, 모델 업로드 행 아래) / "데이터셋 목록 조회"(`GET /datasets`, 데이터셋 업로드 행 아래) 2개 행 추가, 기존 조회성 행과 동일한 3열(출발→도착/방식/계약) 서술 형식 유지. §8 ADR 목록·§9 리스크 표는 변경 없음 | T-011 이 이 계약대로 핸들러를 구현할 수 있도록 선행 필요(T-011 deps) | — | (STM-0017, 리뷰 게이트 해당 없음 — 40§5 기준 적용 대상 팀 없음, 문서만 변경; T-011 구현으로 실현, STM-0018) |
+| D-23 | `POST /links`(FR-001) 응답 바디는 `{model_id, dataset_id}` 로 확정(link_id 없음 — `model_dataset_link` 는 복합 PK(model_id,dataset_id) 뿐이라 models/datasets 의 `{model_id}`/`{dataset_id}` 단일 식별자 패턴과 다름). 에러 매핑: Repository 의 `NotFoundError`(존재하지 않는 model_id/dataset_id, AC-5) → 404, `sqlite3.IntegrityError`(동일 조합 재삽입, 복합 PK 중복) → 409. `app/eval/repository.py` 의 `create_link`/`list_links`(D-17, T-009 기존 구현)는 그대로 재사용, `app/api/links.py` 라우터만 신규 | FR-001 AC-1~AC-5, D-09(복합 PK 구조), D-17(Repository 가 이미 NotFoundError/IntegrityError 를 그대로 전파) | link_id 를 신규 발급해 단일 식별자로 응답 — 복합 PK 전제와 불일치해 기각 | (STM-0020, qa/product 리뷰 PASS) |
 
 ## 2. 확립된 패턴 & 컨벤션 (Patterns)
-- 공통 DoD: 테스트 통과, ruff/eslint/타입 검사, frontend 변경 시 dist 재빌드, 문서 갱신, run 스크립트로 화면 확인 (user/02§10)
-- Claude 기록에서는 usage·model·timestamp·requestId·isSidechain 만 읽는다. 실제 `~/.claude` 기록은 테스트에 쓰지 않는다 (user/02§5, 00 Q2)
-- Windows 에서는 `python3` 대신 `python`/`py`, 셸 스크립트는 LF (CLAUDE.md 실행 환경)
-- (예: 모든 API 응답은 `{data, error}` 래퍼 사용 (STM-0002))
-- 파일 계약: 스키마는 작성자를 검증(additionalProperties false), 읽는 쪽은 관대하되 schema 버전 불일치는 broken(SOURCE_PARSE_ERROR). 단, 보안 필드는 reader 도 재검증 (STM-0001)
-- 파일당 쓰기 주체 1개: `.control.json` = 대시보드, `.monitor/loop-status.json` = 루프 CLI, `.monitor/claude-status.json` = statusline 스크립트 (STM-0001, contracts/README)
-- JSON Schema 2020-12 의 `format` 은 기본 annotation 이라 강제되지 않는다 → 시각 등은 `pattern` 으로 함께 강제 (STM-0001)
-- JSON Schema pattern 의 끝 앵커는 `$` 대신 `(?![\s\S])` — Python `re` 의 `$` 는 끝 개행 앞에서도 매치된다. Python·ECMA 동일 동작 (STM-0001)
-- 존재하지 않는 경로의 무시 여부는 `git check-ignore --no-index -v <path>` 로 확인. 디렉터리 패턴은 하위 파일 경로로 검사 (STM-0002)
-- 보안 리뷰 체크리스트 ID 체계: P-(개인정보) / N-(네트워크 Host·Origin) / W-(쓰기 경로) / D-(의존성) / T-(본문 비노출 테스트). threat-model 의 검증 열이 이 ID 를 가리킨다. ID 는 한 문서(privacy.md)에서 정의하고 다른 문서는 참조만 한다 (STM-0003)
-- 주의: privacy.md 의 체크리스트 D-01~D-04(의존성)는 이 파일 §1 결정 D-01~ 과 번호가 겹친다. 맥락(문서)으로 구분하고, 인용 시 출처 문서를 함께 적는다 (STM-0003)
-- 본문 표식(content marker)은 영숫자만 — Claude Code 경로 인코딩(`[^A-Za-z0-9] → -`)에서 깨지지 않게 (STM-0004)
-- `tests/` 에 `__init__.py` 없음 → `from fixtures...` import, 테스트 파일 basename 은 디렉터리가 달라도 중복 금지 (STM-0004)
-- 실패 메시지는 표식 종류·키 이름만 출력하고 주변 내용·경로 원문은 출력하지 않는다 — 테스트 로그도 노출 경로다 (STM-0004)
-- 시나리오 ID(S-01~S-13, P-01~P-02)는 `workspace/project/qa/test-strategy.md` §4 에서만 정의하고 다른 문서는 참조만 (STM-0004)
-- 미들웨어·API 테스트의 TestClient 는 `base_url="http://127.0.0.1:<fixture port>"` 필수 — 기본 Host `testserver` 는 BAD_HOST (STM-0005)
-- Host 헤더는 정확히 1개여야 한다 — 판정은 서버 파서(h11)에 맡기지 않고 가드에서 한다 (STM-0005, security 리뷰)
-- 스토리 AC 는 `AC-n (요약)` + Given/When/Then, 테스트는 test-strategy §4 S-xx/P-xx 를 참조만 (STM-0006)
-- 패널 화면 상태는 `meta.status` 5종(ok/partial/empty/error/warming)으로 스토리마다 표를 둔다 (STM-0006)
-- 가드 음성 테스트는 실제 홈 아래 **존재하지 않는 이름**만 쓰고 `RealHomeAccessError` 를 단언해 "시스템 호출 전 차단" 을 증명한다(실제 파일을 읽지 않음) (STM-0007)
-- 감사 hook 가드는 인자 없는 호출(None 인자, 예: `os.listdir()`)을 cwd 로 해석해 판정해야 한다 (STM-0007, security 리뷰)
-- 보안 점검은 케이스 표(케이스 id, 요청, 대상, 기대 상태/코드) + 코드 점검 grep(TrustedHostMiddleware 0건, `startswith`/`in` 비교 금지, 415 경로 없음)으로 써서 구현 Task 가 그대로 테스트로 옮기게 한다 (STM-0008)
-- 중복 Host(H-18)는 httpx TestClient 로 보내기 어려우므로 ASGI scope 를 직접 만들어 테스트한다 (STM-0008)
-- Starlette 는 경로+메서드 일치를 경로만 일치보다 우선한다 → `Mount("/")`·`/api` 캐치올이 405 를 가로챌 수 있으니 정적 서빙은 어떤 라우트에도 안 맞을 때로 둔다 (STM-0009)
-- Hook 모듈 importlib 로드는 바이트코드를 쓰지 않는 로더로 — 기본 `SourceFileLoader` 는 대상 저장소에 `__pycache__` 를 만든다(읽기 전용 위반). 해시 불변 테스트에 `__pycache__` 0개 단언, Gate 서브프로세스에 `PYTHONDONTWRITEBYTECODE=1` (STM-0010)
-- `aidlc.py check` 는 스크립트 위치를 루트로 쓰므로 fixture 루트에 aidlc 스크립트·Hook·templates 를 복사해야 fixture 를 본다 (STM-0010)
-- Host 0개·2개·빈 Host 는 httpx 로 못 만든다 → 원시 ASGI scope(`backend_support.asgi_http`)로 테스트 (STM-0010)
-- 아직 없는 대상 라우트는 대역(stub) 라우트를 뒤에 붙여 "가드 통과 → 핸들러 도달" 을 검증, 실제 라우트가 생기면 대역은 가려진다 (STM-0010)
-- FastAPI 0.161 의 `app.routes` 는 포함 라우터를 `_IncludedRouter` 로 감싸 path 가 없다 → 라우트 존재 확인은 요청으로 (STM-0010)
-- ruff 0.17.2 기본 규칙 B008·SIM117·PLW1510·TRY004·UP012 → `Annotated[..., Depends()]`, `check=False` 명시 (STM-0010)
-- 변이(mutation) 검증: 스크래치 사본에 결함을 넣어 테스트가 실제로 잡는지 확인 — T-005 에서 6/6 검출 (STM-0010, qa 리뷰)
-- uvicorn(h11)은 중복 Host 를 앱 전에 평문 400 으로 거부, absolute-form 요청은 `scope.path` 에 `http://...` 가 그대로 들어와 정적 처리기 `:` 세그먼트 거부로 404 (STM-0010, security 리뷰)
-- 로그 비노출 테스트는 로그 줄이 실제로 쓰였는지도 단언한다(빈 로그로 통과 방지) — 패널·데우기 오류를 주입해 로그를 만든다 (STM-0011)
-- 포맷터는 손으로 만든 LogRecord 로 테스트 — pytest caplog 핸들러는 잘못된 `%` 인자에서 먼저 터진다 (STM-0011)
-- 연결 지점 함수가 문서에만 있고 코드에 없으면 호출하는 쪽에 단일 출처로 두고, 이전 여부는 해당 Task 에서 정한다 (STM-0011, architecture 리뷰)
-- 런처 실측은 공백+한글 경로 사본 + 빈 임시 HOME 으로 — KPI-02 시간과 전역 쓰기 0(AC-14)을 한 번에 본다. Ctrl+C 재현은 `setsid` + 프로세스 그룹 SIGINT(백그라운드 `&` 는 SIGINT 무시로 시작) (STM-0012)
-- uvicorn 0.54 는 정상 종료 후 신호를 다시 올려 자식이 -2/-15 로 끝난다 → 런처는 정상 종료로 처리 (STM-0012)
-- `monitor/tools/check_dist_fresh.py` 가 dist 해시 규칙의 단일 출처(정렬 POSIX 경로, 파일별 sha256, CRLF→LF), 로컬 게이트는 `monitor/.venv/bin/python monitor/tools/check.py` (STM-0012)
-- user/02 §9 1년 규칙은 전이 포함 모든 핀을 PyPI JSON 해당 버전 최초 `upload_time` 으로 확인한다. ADR 본문과 표의 직접/전이 표기를 일치시킨다 (STM-0012, architecture 재리뷰)
-- 단일 작성자 파일에 단조 카운터가 필요하면, 작성자가 상대 파일(읽기 전용)의 기준값을 하한으로 쓴다 — 작성자 수를 늘리지 않고 파일 손실에서 복구 (STM-0013)
-- JSON Schema `integer` 는 `7.0` 을 허용하고 Python int 파싱은 4300자리 제한이 있다 → 정수 계약은 `type(x) is int` 술어와 상한을 명시하고 읽는 쪽·쓰는 쪽이 공유한다 (STM-0013)
-- 긴 대기·상한 테스트는 `SimClock` 가상 시계(tick 주입)로 — 7200 s·540 s 를 실제로 기다리지 않는다 (STM-0014)
-- 단일 작성자 규칙은 모든 CLI 호출·POST 전후 상대 파일 바이트 불변을 래퍼에서 검사, seq 연속성은 응답이 아니라 쓰기 spy 로 검증 (STM-0014)
-- 락·대기를 다루는 테스트는 별도 스레드 + `join(timeout)` 으로 경계를 둔다 — 없으면 회귀가 FAIL 이 아니라 스위트 멈춤으로 나타난다 (STM-0014, qa 변이 검사)
-- Task 지시와 계약이 다르면 계약을 따른다 — T-009 에서 지시의 loop-end reason(completed 등)이 계약에 없어 실제 CLI 로 확인 후 계약값 사용 (STM-0015)
-- 링크·경계 검사는 파일을 여는 **모든** 곳에 같은 함수로 적용한다 — 스캔 시점 검사만으로는 스캔~열기 사이 틈과 다른 열기 경로(폴백)가 남는다. strace openat 감사가 누락을 잡는다 (STM-0016)
-- 체이닝 timeout 은 새 프로세스 그룹 + `killpg` — `subprocess.run` 의 kill 만으로는 손자 프로세스가 남는다. 테스트는 손자를 만드는 복합 명령으로 (STM-0016)
-- 본문 비접근 증명: 허용 목록 밖 키 접근 시 실패하는 trap dict, `json.loads` spy 로 사전 필터 증명 (STM-0016)
-- 다층 방어는 층마다 따로 테스트한다 — 한 층을 지워도 다른 층이 막아 변이가 살아남는다(T-010 변이 24종 중 3건 동치 수용) (STM-0016)
-- 증분 읽기 테스트는 추가 후 정확한 건수 + 실제 seek/읽은 바이트를 단언 — offset 무시 회귀를 잡는다 (STM-0016)
-- 수백 MB fixture 는 pytest tmp(3회분 보관)가 아니라 `tempfile.mkdtemp` + `shutil.rmtree` 로 만들고 지운다 (STM-0018)
-- 문서의 "미검증" 표기는 사람 실기 UAT 항목(statusLine 실세션, 메인 세션·Windows 일시정지/재개)에만 붙이고, 컨테이너에서 실제 호출한 응답은 근거(호출·상태 코드)와 함께 적는다. 컨테이너 측정은 참고값이지 PASS 가 아니다 (STM-0019)
-- 실서버 시나리오는 `fixtures/live_server.py` 의 `live_server()`(임시 포트, HOME·AIDLC_ROOT·CLAUDE_HOME 주입, 로그 파일 수집)를 쓴다. 루프 CLI E2E 는 `install_engine()` 으로 workspace 에 복사한 `aidlc.py` 를 실행한다(loop_control 이 자기 위치로 루트 계산) (STM-0018)
+- 비호환 (model, metric) 조합도 Evaluation 레코드는 생성한다 — `value=NULL`, `status='skipped_incompatible'` 로 남기고 평가 자체를 누락시키지 않는다 (ADR-003, KPI-02 집계 일관성)
+- 로그 레벨: ERROR=평가 실패(`status=error`), WARN=`status=skipped_incompatible`, INFO=Run 시작/완료 (user/02§7, 20§6)
+- story 문서에 "Phase 별 범위" 섹션을 FR 원문 수용 기준과 별도로 두면, qa/backend/frontend 가 설계 문서를 다시 찾지 않고 story 하나만으로 P1/P2 경계를 판단할 수 있다 (STM-0001)
+- 신규 하위 패키지/모듈 파일명을 추가할 때는 20§4 컴포넌트 표를 먼저 갱신하고 architecture 리뷰를 거친다 — 코드와 설계 문서의 모듈 경계가 어긋나지 않게 함 (STM-0002)
+- 동시성 최적화(WAL 등)는 NFR-004(동시 사용자 1명) 전제 하에서는 도입하지 않는다 — 과설계 금지(03 원칙 1) 적용 사례 (STM-0003)
+- 스키마/DDL 변경을 검증할 때는 `workspace/project/eda/schema_validation.py` 의 합성 fixture 검증 방식을 재사용해 실제 구현(DDL)을 in-memory sqlite 에서 재검증한다 — CHECK/FK/복합 PK 제약뿐 아니라 집계 쿼리의 인덱스 사용 여부(`EXPLAIN QUERY PLAN`)까지 함께 확인하는 패턴은 향후 스키마 변경에도 재사용 가능 (STM-0003)
+- Phase 경계에 걸린 AC(P2 전용)의 테스트 케이스는 상태를 "구현 전이라 skip"(의도적, Phase 미도달)과 "미구현 기능이라 테스트를 삭제/스킵해 통과시킴"(금지된 패턴)을 구분해 "P1 단계에서는 skip, T-0xx 완료 후 활성화" 식으로 명시한다 (STM-0004)
+- fixture 모델 스크립트는 별도 pickle 바이너리 없이, import 시점에 대응 CSV 와 **동일한 `random_state`/파라미터**로 합성 데이터를 재생성해 즉석 학습하는 방식으로 `predict(X)->y` 계약(ADR-002)을 충족시킨다 — CSV 와 모델 스크립트가 항상 같은 분포를 쓰도록 유지보수 포인트를 스크립트 상단 주석에 명시 (STM-0005)
+- 전용 venv 구성 절차는 별도 문서 파일 대신 해당 `requirements*.txt` 자체의 헤더 주석에 적는다 — 소유 팀(cicd) 파일 안에서 절차를 끝맺는 가장 단순한 선택이며 `monitor/backend/requirements-dev.txt` 가 이미 쓰던 방식과 동일 (STM-0006)
+- Task 마다 격리된 임시 venv 를 새로 만들어 실제 명령을 실행·검증하고 Task 종료 시 삭제하는 절차가 반복 재사용되는 공통 패턴으로 확립됨 — fixture 검증(STM-0005), `requirements.txt` 설치 재현(STM-0006), cicd 로컬 게이트(ruff/pytest) 명령 재현(STM-0007) 모두 동일 절차 적용
+- 40§5 리뷰 게이트 표의 적용 대상 팀이 하나도 없는 Task(FR/DB·스키마/코드/배포·로그/보안 경로 변경이 전혀 없고 의존성 추가만 있는 경우)는 리뷰 게이트를 건너뛸 수 있다 — 작업 팀 자신은 리뷰 대상에서 제외되는 규칙 + 02§9(의존성 추가에 특별 승인 절차 없음)가 함께 적용된 선례 (STM-0006 T-030, STM-0007 T-006)
+- `20-architecture-analysis.md`§5 데이터 흐름 표에서 "POST(쓰기) + GET(조회)" 짝을 문서화할 때: 응답 바디 스키마가 단순하면 같은 셀에 `/` 로 병기(예: `N:M 연결` 행의 `POST /links` / `GET /links`), 응답 바디에 필드 나열이 필요해 가독성이 떨어지면 별도 행으로 분리한다(예: `GET /models`/`GET /datasets`, D-22) (STM-0017)
+- 업로드 라우터(`app/api/models.py`, `app/api/datasets.py`)는 "① 저장 디렉토리 모듈 속성(테스트가 monkeypatch) → ② `_safe_storage_name()` 으로 저장 → ③ 경로 이탈 가드(`is_relative_to`) → ④ 도메인 계약 검증(위반 시 4xx+ERROR 로그, 파일/DB 레코드는 그대로/미생성) → ⑤ `repo.create_*` 호출 → ⑥ INFO 로그" 순서의 공통 구조를 따른다 — 신규 업로드 엔드포인트 추가 시 이 틀을 그대로 재사용 (STM-0018)
+- CSV 컨벤션 검증(예: "마지막 컬럼=라벨")은 pandas 없이 표준 `csv` 모듈로 헤더 열 수만 확인하면 충분하다 — 런타임 의존성을 API/평가 엔진 코드 경로에 최소화(pandas 는 fixtures/사용자 스크립트 내부에서만 사용) (STM-0018)
+- (제안, 미확정 — ADR-006 대기) `app/web/routes.py` 가 `from app.api import app` 로 backend 소유 FastAPI 싱글톤을 import 한 뒤 모듈 로드 시점 부작용으로 `.mount()`/`.include_router()` 를 스스로 등록하는 "self-registration on import" 패턴. 의존 방향(20§4 "webui→api")과 파일 소유권(backend 파일 미수정)은 architecture 리뷰 PASS 했지만, 신규 구조적 패턴에 ADR 이 없다는 이유로 리뷰 게이트 전체는 FAIL(T-012 자체 재작업은 불필요로 명시됨) — ADR-006(또는 20§4/§6 갱신)으로 이 패턴을 공식 채택할지, `app/__main__.py`(T-036) 에서 명시적 composition root(직접 `include_router`/`mount` 호출)로 바꿀지 결정되기 전까지는 "확립된 패턴"으로 간주하지 말고 그대로 복제하지 않는다 (STM-0019, I-18 참고)
+- 업로드류 화면의 `data-testid` 네이밍 규칙(이번 Task 에서 최초 확립, qa 공식 합의는 아직 없음): `<화면>-<역할>[-<상태>]` kebab-case. 예: `model-upload-form`/`model-upload-submit`/`model-upload-status`/`model-upload-error`, `model-list`/`model-list-empty`/`model-list-loading`/`model-list-error`/`model-list-item`, `r2-warning`(대칭적으로 `dataset-*`). 템플릿 상단 주석에 기록, 다음 화면 Task(T-014 등)도 재사용 (STM-0019)
+- 화면 상태 4종(기본/로딩/오류/빈)은 서버 렌더링 폴백(초기 HTML에 "빈 상태" 텍스트 포함) + 클라이언트 JS 전환(로딩 텍스트 → 목록/오류/빈 메시지로 치환)의 이중 구조로 구현한다 — JS 비활성/느린 네트워크에서도 최소한 빈 상태 메시지가 보이도록 함 (STM-0019)
+- FastAPI 422 에러 바디의 `detail` 은 문자열(도메인 에러)과 pydantic 검증 배열(`[{loc,msg,...}]`) 두 형태로 온다 — 화면에 그대로 노출하려면 문자열/배열/객체를 모두 사람이 읽는 문장으로 변환하는 공통 포매터(`upload.js::formatDetail`)가 필요하며, 이후 다른 업로드/조회 화면에도 재사용 권장 (STM-0019)
+- API 라우터(`models.py`/`datasets.py`/`links.py`)는 동일한 `get_db` FastAPI 의존성 + 테스트에서 `app.dependency_overrides` 로 교체하는 격리 패턴을 공유한다 — 3번째 라우터(links)까지 동일 패턴이 재확인됐으므로 확립된 패턴으로 간주, 다음 라우터(`runs.py`, T-015)도 그대로 재사용 권장 (STM-0020)
 
 ## 3. 알려진 이슈 & 리스크 (Known Issues)
 | ID | 내용 | 영향 범위 | 상태 | 출처 |
 |----|------|-----------|------|------|
-| ~~I-01~~ | ~~`.gitignore` 에 런타임 파일 미등록~~ | 저장소(public) | 해결 (STM-0002): 런타임·build 블록 추가 | (STM-0001, STM-0002) |
-| I-03 | 전역 `dist/` 같은 넓은 무시 패턴이 추가되면 커밋 대상 dist 가 무시됨(ADR-005 위반) | 배포 | 감시: 리뷰 시 `git check-ignore --no-index monitor/frontend/dist/index.html` 가 exit 1 | (STM-0002) |
-| ~~I-02~~ | `TOO_MANY_STREAMS`(503), loop-cli 결정(exit 64/1, episode 상한, NO_LOOP) 이 ADR-004·ADR-011·20 §5 에 아직 없음 | 문서 정합성 | 열림 → T-009 | (STM-0001) → 일부 해소: TOO_MANY_STREAMS 는 ADR-011 §9·20 §5 반영 (STM-0005), loop-cli 결정은 T-009 → **해소** (STM-0015, T-009 문서 정합) |
-| ~~I-04~~ | ADR-011 §4: Host 가드(TrustedHostMiddleware)가 포트를 검사할지 미정. 현재는 포트 무시인데 privacy.md N-02 는 포트 불일치 거부를 요구 | 보안 체크리스트 정합성 (비차단) | 열림: 검사하면 구현 방식을 ADR 에 명시, 안 하면 N-02 포트 케이스를 선택 항목으로 유지 | (STM-0003) → **해소** (STM-0005, ADR-011 §4·§5 / ADR-006) |
-| ~~I-05~~ | ADR-011 §5 에 비-JSON Content-Type 도 403 `FORBIDDEN_ORIGIN` 이라는 한 줄 보강 필요 (D-14) | 문서 정합성 (비차단) | 열림 → [architecture] 후보 | (STM-0003) → **해소** (STM-0005, ADR-011 §4·§5 / ADR-006) |
-| I-06 | 보안 통제가 모두 "요구" 상태(구현 전). 구현 후 P/N/W/T 항목을 실제 실행 근거와 함께 재확인 필요 | 보안 | 열림: backend 구현 후 security 리뷰 | (STM-0003) |
-| I-07 | tasks.md T-002 DoD 경로 `workspace/teams/security/` 가 실제 경로 `workspace/project/security/` 와 불일치 | 문서 정합성 | 열림 → cascade 2/3 에서 정정 | (STM-0003) |
-| ~~I-08~~ | jsonschema(dev) 가 ADR-006 dev 목록에 없음 | 문서 정합성 | 열림 → T-021 | (STM-0004) → **해소** (STM-0005, ADR-011 §4·§5 / ADR-006) |
-| ~~I-09~~ | 홈 격리가 function 범위라 session 범위 fixture·수집 시점 import 는 실제 HOME 을 볼 수 있음, `CLAUDE_CONFIG_DIR` 미처리 | 테스트 신뢰성·개인정보 | 열림 → T-023 (T-005 전) | (STM-0004) → **해소** (STM-0007: 3겹 격리 + audit-hook 가드, 95 passed) |
-| I-10 | 하드 링크는 `resolve()` 경계 검사로 탐지 불가 | 경로 이탈 | 열림 → T-022 (방침 결정) | (STM-0004) → 일부: 수집·폴백·스냅샷 모두 하드 링크 건너뜀(STM-0016), 문서 방침은 T-022 |
-| ~~I-11~~ | 30일 JSONL 329~658 MB 크기는 선형 추정(pad 9000~18000) | 성능 테스트 정확도 | 열림 → T-013 실측 | (STM-0004) → **해소** (STM-0018: 실측 332.8 MB / 637.8 MB, 추정이 정확. test-strategy §5 반영) |
-| ~~I-12~~ | `jsonschema-specifications 2025.9.1` 이 02 §9 "최근 1년 내 릴리스" 경계(약 13개월) — dev·전이 전용이라 수용 | 의존성 정책 | 감시 → T-007 고정 시 최신 확인 | (STM-0005) → **해소** (STM-0012: 36개 핀 PyPI 실측, ADR-006 Decision 5 예외 표) |
-| ~~I-13~~ | privacy.md N-02·N-04 가 ADR-011 §4·§5 와 불일치(포트 검사 "선택", TrustedHost 문구), 중복 Host·선행 0·userinfo·Content-Type 접두 함정 케이스 없음 | T-005 리뷰 기준 | 열림 → T-024 (T-005 전) | (STM-0005) → **해소** (STM-0008: privacy.md §5.1 H-01~H-22, §5.2 C-01~C-11) |
-| ~~I-14~~ | ADR-011 §9 에 405(OPTIONS 포함)·Starlette 기본 HTTPException 매핑 규칙과 기본 `{"detail":...}` 본문 금지가 없음, HostGuard 의 websocket/lifespan scope 처리 미정, SSE GET Origin 검사 여부 미정(교차 출처 EventSource 로 슬롯 소모 → 가용성) | 앱 셸 구현 | 열림 → T-025 (T-005 전) | (STM-0005) → **해소** (STM-0009, ADR-011 §9~§12) |
-| I-15 | `aidlc.py check docs` 는 검사 대상 문서가 0개여도 PASS(exit 0) → P1 종료 조건·T-014 DoD 가 문서 없이 충족될 수 있음. 대시보드는 D-21 의 `docs/README.md` 조건으로 보완. 프레임워크 Gate 변경은 별도 승인 필요 | Gate 신뢰성 | 부분 해소 (STM-0019): 문서 3종(`docs/README.md`, `docs/api/README.md`, `docs/guide/README.md`) + `monitor/README.md` 생성으로 `check docs` 가 3개 문서·미작성 0 의 **실제 PASS** 확인. 프레임워크의 빈 대상 PASS 동작 자체와 Q-P2 는 여전히 PO 미답 | (STM-0006, STM-0019) |
-| ~~I-16~~ | 루프 도중 `.control.json` 이 깨지거나 삭제되면 대시보드가 seq 1 을 써서 `baseline_seq` 이하가 되어 CLI 가 새 pause/resume 을 무시 | FR-005 신뢰성 | 열림 → T-026 (T-008 전) | (STM-0006) → **해소** (STM-0013, ADR-004 Decision 1.1, loop-cli §7) |
-| I-17 | FR-002 Phase 진행률 바: `plan` SSE topic 이 M2 라 P1 에서 실시간 갱신 보장 안 됨(01 §5.1 흐름 3 과 어긋남) | UX | 열림 → T-012 에서 `tasks` 이벤트 시 `/plan` 재조회 | (STM-0006) |
-| I-18 | PO 미답 질문: Q-P1(단계 3 에 `.claude/agents` 요구?), Q-P2(docs Gate 빈 대상), Q-P3(run.bat 실패 시 창 유지), Q-P4(R-01 실패 시 후퇴안은 01 §10 과 다름 → PO 결정) | 수용 기준 | 열림 → 사용자에게 질문 | (STM-0006); Q-P3 은 권장 기본값으로 구현(D-37), Q-P5(user/02 §9 가 전이 의존성에도 적용되는가 — 현재 직접 채택에만 적용) 추가; STM-0019 시점에도 Q-P1~Q-P5 모두 PO 미답(Q-P3 은 기본값 구현, Q-P5 는 ADR-006 Decision 5 로 처리 중) |
-| I-19 | home_guard 빈틈: 인자 없는 `os.listdir()` 통과(None 인자), 경로 판정 중 OSError 시 통과, 원래 `XDG_CONFIG_HOME/claude` 미등록. 가드 밖: 정수 fd·`dir_fd`·`os.stat`/`os.readlink`·서브프로세스 서버 — test-strategy 에 미기재 | 테스트 격리 | 열림 → T-013 (비차단) → T-013 은 빠른 진행 모드로 축소되어 미처리, T-032 로 이월 (STM-0018) | (STM-0007) |
-| I-20 | 출처 가드의 경로 비교 기준(디코드된 `scope["path"]` vs `raw_path`, 끝 슬래시) 미정 → `/api/v1/%65vents` 등으로 우회 가능성 | SSE 가용성 | 열림 → T-011 (가드는 라우터와 같은 디코드 path 로 비교 + 우회 경로 슬롯 카운트 테스트) | (STM-0009) |
-| ~~I-21~~ | Starlette 자동 HEAD·405 가로채기 동작은 이 환경에 FastAPI 가 없어 실행 미확인 | 계약 준수 | 열림 → T-005·T-011 테스트로 고정 | (STM-0009) → **해소** (STM-0010: FastAPI 0.161.1 `APIRoute(GET)` 는 HEAD 미추가 → 405 실측, 순수 Starlette `Route` 는 HEAD 추가 → T-011 은 APIRoute) |
-| I-22 | fastapi 0.161.1 전이 의존성 `opentelemetry-api`(Apache-2.0)·`annotated-doc`(MIT) 가 ADR-006 에 없음, TestClient httpx → httpx2 폐기 예고. 텔레메트리는 SDK·exporter 없고 auto_configure 기본 False 라 외부 전송 없음 | 의존성 기록 | 열림 → T-007(httpx 결정)·T-009(ADR-006 기록) | (STM-0010) → 일부 해소: ADR-006 기록 완료(STM-0012). httpx2 전환은 ops 의 httpx2 로거 억제 후 T-029 |
-| ~~I-23~~ | ADR 문구가 구현과 다름: ADR-009 "import 부작용 없음"(실제 기본 로더는 .pyc 씀), ADR-011 §4 미들웨어 방식(실제 `__call__`), §9 정적 서빙(실제 router.default), 20 §4 디렉터리 트리·StaticFiles 문구 | 문서 정합성 | 열림 → T-009 | (STM-0010) → **해소** (STM-0015, T-009 문서 정합) |
-| ~~I-24~~ | 소소한 하드닝: `server: uvicorn` 헤더 노출(`server_header=False`), FastAPI 텔레메트리를 `telemetry=` 로 명시 비활성 + 테스트로 고정(사용자 `OTEL_*` 환경 영향 차단), 가짜 Hook 쓰기 함수 테스트가 `kind=="full"` 에만 error 금지 단언, `asgi_http` receive 의 `sleep(3600)` 무한 대기 | 하드닝·테스트 신뢰성 | 열림 → T-008 | (STM-0010) → **해소** (STM-0014: server_header=False, telemetry 비활성 + 실서버 OTLP 0건 확인, raising-fake 전 kind `calls == []`, asgi_http 짧은 timeout) |
-| ~~I-25~~ | privacy.md §5.2 C-01~C-03·H-01~H-03 POST "통과" 기대값이 대역 핸들러 200 기준 — 실제 `/control/pause` 는 활성 루프 없으면 409 → 기대값을 "400/403/422 아님" 으로 | 테스트 정합성 | 열림 → T-008 | (STM-0010) → **해소** (STM-0014: 실제 control 라우트 기준, 루프 없음 409) |
-| ~~I-26~~ | backend 에 `source_status()`·`warmup.progress()` 없음 → health 가 stat 판정을 직접 수행(P1 허용). 리더들의 누락·형식 오류 WARN 로그(NFR-002)·시작 시 소스 발견 INFO(20 §6) 미구현 | 관측성 | 열림 → T-010 | (STM-0011) → **해소** (STM-0016: warmup.progress 노출, 고정 문구 WARN/INFO, source_status 는 health 유지 결정) |
-| ~~I-27~~ | 문서가 health 실제 계약과 다름: 20 §5 health 행, ADR-001 §4(`data.app` 판정), contracts/README 내부 인터페이스 절(`app.state.warmup.progress() -> {state, progress}`) 없음 | 문서 정합성 | 열림 → T-009 (T-010 전 권장) | (STM-0011) → **해소** (STM-0015, T-009 문서 정합) |
-| I-28 | `redact()` 빈틈(2차 방어): 인코딩 디렉터리명(`-home-user-x`, `C--Users-bob-proj`), 상대 경로, `file:///`, `~bob/`, 공백 포함 Windows 경로 뒷부분. 현재 호출부는 예외 타입만 남겨 실제 노출 없음 | 로그 개인정보 | 열림 → Backlog [ops] | (STM-0011, security 리뷰) |
-| ~~I-29~~ | user/02 §10 DoD "타입 검사 통과" 인데 venv 에 타입 검사기 없음, backend 기존 mypy 오류 2건(`aidlc_reader.py`, `pipeline.py`) | DoD 준수 | 열림 → T-007(mypy dev 의존성)·T-008(오류 수정) | (STM-0011, qa 리뷰) → **해소** (STM-0014: mypy 5건 수정, 게이트 PASS) |
-| ~~I-30~~ | backend mypy 오류는 5건/4파일(aidlc_reader.py:173, pipeline.py:294, security.py:203·204, static_files.py:86) → 로컬 게이트 FAIL | DoD(user/02 §10) | 열림 → T-008 | (STM-0012) → **해소** (STM-0014) |
-| I-31 | 런처 테스트가 못 잡는 변이 8/15: `_STOP_CODES` 매핑 제거, `--no-cache-dir` 제거, 자식 env 변수 제거 누락, 런처 BIND_HOST 변경 등 | 회귀 탐지 | 열림 → T-029 | (STM-0012, qa 리뷰) |
-| I-32 | 미검증: run.bat 실기(Windows), cmd 가 현재 폴더의 `py.exe`/`python.exe` 를 먼저 찾는 문제, Node 없이 첫 화면(AC-4)·빈 패널 화면(AC-13)은 dist 이후 | KPI-02·SCOPE-01 | 열림 → T-014(UAT K2-W)·T-013 → 시나리오 부분은 T-032 로 이월 (STM-0018). STM-0019: T-014 partial 이라 여전히 열림 → UAT 실기 Task(K2-W·X-1~X-3). AC-4 는 I-46 참조 | (STM-0012, STM-0019) |
-| I-33 | 공급망: `==` 고정이나 해시 미검증(`--require-hashes` 없음), health 응답 위장(같은 사용자 로컬 프로세스) 위험이 threat-model 에 미기재 | 공급망 | 열림 → T-029(P2 전 평가)·T-022(문서) | (STM-0012, security 리뷰) |
-| I-34 | JSON 중복 키는 마지막 값 사용 — CLI·대시보드 판정 일치 근거가 stdlib 동작뿐 | 루프 제어 | 수용(L) | (STM-0013, security 재리뷰) |
-| I-35 | `test_sq21_lock_timeout_2s` 경계 없음 — 락 timeout 이 사라지면 스위트가 멈춤 | 테스트 신뢰성 | 열림 → T-011 | (STM-0014, qa 리뷰) |
-| I-36 | FR-005 AC-22(제어 파일 유무가 Hook `pending()`·`summary()` 에 영향 없음) 테스트 없음 | 수용 기준 | 열림 → T-013 → T-032 로 이월 (STM-0018) | (STM-0014, qa 리뷰) |
-| ~~I-37~~ | 문서 정합: 20 §5 F3 가 resume 본문 `{"max_pause_sec":..}` 허용처럼 적힘(실제 `{}` 만), ControlView 실제 필드·"loop-status 없음 = ended + empty" 미반영, `aidlc.py` docstring 의 loop-* 줄 | 문서 | 열림 → T-009 | (STM-0014) → **해소** (STM-0015, T-009 문서 정합) — aidlc.py docstring 은 T-010 [backend] |
-| I-38 | 하드닝 권고(비차단): 요청 본문 크기 상한 없음(5 MB 도 메모리로 읽힘), `.control.json` 자리 FIFO 면 open 멈춤, resume `null` 본문 = 생략 취급 | 가용성(L) | Backlog T-030 | (STM-0014, security 리뷰) |
-| I-39 | 런북 pause-not-releasing.md: "세션 없음/pause_timeout" 조치가 "재개 후 /aidlc-run" 으로 틀림(V6·V1 은 재개 버튼 비활성) + running 중 세션 종료 항목 누락 | 운영 문서 | 열림 → T-028 | (STM-0015, ops 리뷰) |
-| I-40 | SKILL 분기표에 Python 실행 실패 exit(127·9009) 행 없음 | 스킬 견고성(L) | Backlog(architecture 판단) | (STM-0015, qa 리뷰) |
-| I-41 | 문서 정합: 20 §5 usage 행(summary `tz_offset_min`, 열 지향 timeseries, ControlData `session_activity_*`), contracts/README §4 services 에 usage·I-26 결정, ADR-002 Consequences 에 시간 버킷 근사(반시간 TZ 일 경계 ±30분, 5h 창이 시작 전 최대 1시간 포함), ADR-003 `$CLAUDE_CONFIG_DIR` 지원 | 문서 | Backlog T-031 [architecture] | (STM-0016) |
-| I-42 | 미실측: statusLine 실행 환경의 `CLAUDE_PROJECT_DIR` 제공 여부, VS Code 패널의 statusLine 실행 여부(A5), stdin 키·단위 | FR-004·ADR-003 | 열림 → T-014 UAT. STM-0019: 실세션 미수행이라 여전히 열림 → UAT 실기 Task(statusLine 실세션, `bash` 없는 Windows 폴백) | (STM-0016, STM-0019) |
-| I-43 | 로컬 게이트 ruff/mypy 대상에 `aidlc/hooks/statusline.py` 미포함(수동 ruff 만), safe_open 의 lstat~open 사이 FIFO 교체 경합 테스트 없음, 거부된 파일의 커서 항목이 한 주기 남음 | 품질 | Backlog T-029·T-030 | (STM-0016) |
-| I-44 | SSE 허브의 첫 tick 이 변경 감지 기준선을 잡아, 첫 구독 직후 1 tick(약 1초) 안의 변경은 `changed` 로 알려지지 않음. 프론트가 연결 시 REST 를 재조회하면 무해(제품 결함으로 보지 않음) | SSE 실시간성(L) | 열림 → [backend] 낮음/선택: 동작 확인만 | (STM-0018) |
-| I-45 | perf 측정은 페이지 캐시가 따뜻한 상태만 — 콜드 디스크(첫 실행) 미측정. 상한(637.8 MB) 규모 REST p95 는 통과만 확인하고 값 미기록. 성능 게이트(`check.py` 에 `-m perf` 단계, 약 11 s)는 필수 아님 | NFR-001 신뢰도 | 열림 → T-032(콜드 캐시), [cicd] 게이트화는 선택 | (STM-0018) |
-| I-46 | 컨테이너(Node 설치됨) 측정으로는 AC-4(사용자 PC 에 Node 불필요)가 **증명되지 않음**. 런처에 node/npm 호출이 없음은 grep 으로만 확인 | SCOPE-01·KPI-02 | 열림 → UAT 실기 Task(Node 없는 PC 의 K2-W/K2-U) | (STM-0019) |
-| I-47 | 변경 메서드(PUT/DELETE 등)에 JSON Content-Type 이 없으면 GET 전용 경로도 405 가 아니라 403 `FORBIDDEN_ORIGIN` 이 우선(ADR-011 §5 의도, D-14·D-29 와 일치). 실서버: PUT(JSON)/OPTIONS → 405, DELETE(Content-Type 없음) → 403. 명세·`docs/api/reference.md` 의 405 설명에 이 조건이 없음(docs/api/README §5·§12 에는 기록) | 문서 정합성(낮음) | 열림 → [architecture] 낮음: 명세 수정 시 export_openapi + openapi_docs 재생성까지 같은 Task | (STM-0019) |
-| I-48 | 컨테이너 참고값(정식 K2-U 아님, uat-checklist §6.7): `git archive HEAD`(5fc8e5e) 복사본, Python 3.13.16, `bash run.sh --no-browser` 첫 실행 health 200 7.42 s / `GET /` 7.44 s, 재실행(설치 생략) 0.59 / 0.61 s. KPI-02(≤ 5분) 이내 참고값이나 K2-U/K2-W 는 `미실행` | KPI-02 | 참고 — 정식 측정은 UAT 실기 Task | (STM-0019) |
+| I-01 | "하루"(2026-10-27) 일정 내 P1 전체 완성 가능 여부가 완전히 해소되지 않음 (사용자 본인도 불확실, Q9) | 전체 일정, P2 착수 시점 | 열림 — plan.md RISK-01 로 모니터링 | (00§3.2#9) |
+| ~~I-02~~ | ~~동일 (model, dataset) 조합이 재업로드될 때 신규 레코드로 쌓을지 기존 레코드를 갱신할지 정책 미정~~ | — | 해소됨 → D-15(ADR-004: 항상 신규 레코드 생성, STM-0012) | (30§2 유일성 주의, STM-0001, STM-0003, 해소: STM-0012) |
+| ~~I-03~~ | ~~`app/eval/repository.py` 의 SCHEMA_DDL 은 FK 를 선언하지만 PRAGMA foreign_keys 설정이 없어 무력화될 수 있음~~ | — | 해소됨 → D-18(`get_connection()` 에 PRAGMA 추가, 단위 테스트 6건, qa 리뷰 PASS, STM-0015) | (STM-0003, 해소: STM-0015) |
+| I-14 | T-029 가 기존 "Task 마다 격리 임시 venv 생성→검증→삭제"(STM-0005/0006/0007/0014, LTM §2/§5 확립 패턴) 대신 저장소 루트에 영구 `.venv/` 를 생성해 남겨두는 것으로 관례를 **단독으로 변경**함(cicd/architecture 승인 없음). 02§11(전역/시스템 Python 금지) 자체 위반은 아니고 `.gitignore` 등재로 커밋 대상도 아니지만, `requirements.txt`(D-12, 버전 `==` 고정)와 실제 설치본이 향후 Task 들 사이에서 조용히 어긋날(drift) 위험이 있어 qa 가 "향후 기본 패턴"으로는 단독 승인하지 않음(STM-0015 리뷰) | 이후 모든 코드 Task 의 검증 절차(venv 재사용 여부) | 열림 — Task 후보: `[cicd]` "영구 .venv/ 유지 + 매 Task 검증 전 pip install -r requirements.txt 재실행 의무화" 로 공식 전환할지, 기존 임시 venv 패턴을 유지할지 결정 후 LTM §2 패턴·cicd charter·requirements.txt 헤더 주석 갱신 (tasks.md 반영 필요) | (STM-0015) |
+| I-15 | ruff(0.17.2) 기본 룰셋의 `flake8-bugbear` B008 이 FastAPI 표준 패턴(`Depends()` 를 함수 인자 기본값으로 사용)을 오탐 — 저장소에 `pyproject.toml`/`ruff.toml` 이 없어 전역 ignore 불가, 현재 `app/api/models.py` 에 인라인 `# noqa: B008` 로만 억제. T-011/T-013/T-015(API 라우터 추가 Task)마다 반복될 패턴 | API 라우터를 추가하는 모든 backend Task | 열림 — Task 후보: `[cicd 또는 architecture]` ruff 설정 파일(`pyproject.toml`/`ruff.toml`) 신설해 B008 전역 ignore 할지 결정 (tasks.md 반영 필요) | (STM-0016) |
+| I-04 | QS-2(재시작 복구, FR-004 AC-6/TC-004-06)는 pytest 로 자동화하기 어려워 수동 체크리스트로 분류됨 | qa test-strategy.md 실행 전략, T-019/T-020 전후 수동 검증 필요 | 열림 — 자동화하려면 cicd 와 subprocess 기반 재기동 방식 협의 필요 | (STM-0004) |
+| ~~I-05~~ | ~~저장소/환경에 pandas/numpy/scikit-learn 의존성이 전혀 선언되어 있지 않음~~ | — | 해소됨 → D-12(`requirements.txt` 신설, STM-0006) | (STM-0005, 해소: STM-0006) |
+| I-06 | 한글 주석이 포함된 `requirements*.txt` 를 cp949 로케일 Windows 콘솔에서 `PYTHONUTF8` 환경변수 없이 `pip install -r` 하면 `UnicodeDecodeError` 로 설치가 100% 실패한다(실측 재현, `run.py` 의 `_pip_env()` 가 다루는 것과 동일 원인). 루트 `requirements.txt`(D-12)에는 `PYTHONUTF8=1` 안내를 반영했지만, `monitor/backend/requirements-dev.txt` 의 수동 설치 안내 주석에는 아직 빠져 있음 | 사람이 터미널에서 직접 `pip install -r requirements.txt`/`requirements-dev.txt` 를 치는 모든 경로 | 열림 — Task 후보: `monitor/backend/requirements-dev.txt` 설치 안내 주석에 `PYTHONUTF8=1` 추가 (tasks.md 반영 필요) | (STM-0006) |
+| ~~I-07~~ | ~~`app/eval/repository.py` 가 `ruff format --check` 기준 미포맷 상태~~ | — | 해소됨 → T-009(backend) 구현 중 `ruff format app tests` 실행으로 부작용 해소(STM-0014, qa 리뷰로 "All checks passed!" 재확인). T-032 는 더 이상 수행 불필요 | (STM-0007, 해소: STM-0014) |
+| ~~I-08~~ | ~~저장소 루트 `run.py` 가 이미 AI-DLC Monitor 용으로 커밋되어 있는데 20-architecture-analysis.md 가 ML_miniops 런처도 같은 경로로 설계해 충돌~~ | — | 해소됨(설계 수준) → D-16(ADR-005: ML_miniops 엔트리포인트를 `app/__main__.py` 로 재지정, STM-0013). 단 `workspace/teams/backend/charter.md`, `workspace/teams/ops/charter.md`, `workspace/project/ops/runbooks.md`, `40-team-composition.md` §1 에는 아직 `run.py` 잔존 표기 있음 — I-13 으로 추적 | (STM-0008, 해소: STM-0013) |
+| I-09 | 02§7 로그 레벨 규칙(ERROR/WARN/INFO)은 아직 backend 평가 실행기(`app/eval/engine.py`, T-009 이후)가 구현되지 않아 "검증"이 아니라 "구현 전 규칙 명시"로만 작성됨(`workspace/project/ops/runbooks.md` §1) | backend 평가 실행기 구현 후 ops 재검증 필요 | 열림 — 구현 Task 생성 전까지는 메모로만 유지(정식 Task 후보 아님, 근거 부족) | (STM-0008) |
+| I-10 | NFR-003(127.0.0.1 바인딩) 코드 리뷰가 ML_miniops 자체 런처 미구현(I-08 run.py 경로 충돌 미해소)으로 실측 불가 — AI-DLC Monitor 코드(`run.py`, `monitor/backend/app/__main__.py`/`config.py`)의 `BIND_HOST="127.0.0.1"`만 확인했고 이는 ML_miniops 와 무관. 설계 문서(20§4/§6) 수준 PASS 로만 결론 | T-033(run.py 경로 충돌 해소) + backend 런처 구현 후 security 재검증 필요(T-019 선행조건에도 영향) | 열림 — Task 후보: `[security]` 런처 구현 후 NFR-003 실측 재검증 (tasks.md 반영 필요) | (STM-0009) |
+| I-11 | ~~R2(임의 코드 실행) 경고 문구("본인이 작성/신뢰하는 스크립트만 업로드")가 20§9/ADR-002/stories/FR-002.md 에는 반영돼 있으나, 실제 업로드 화면·사용자 문서에는 아직 노출되지 않음~~ | T-020(product P1 문서 갱신)의 DoD 범위 | **부분 해소** — frontend 쪽은 해소됨: `app/web/templates/upload.html` 에 `data-testid="r2-warning"` 배너로 실제 노출, 통합 테스트+실 uvicorn HTTP round-trip+security 리뷰 PASS 로 확인(STM-0019). product 사용자 문서(T-020) 쪽은 아직 미구현 — 열림 유지 | (STM-0009, frontend 해소: STM-0019) |
+| I-12 | `T-019`(서버 바인딩 검증, NFR-003)의 `deps`가 `T-002, T-008`뿐이라 tasks.md 상 "지금 실행 가능"했지만, 실제 선행조건인 `T-033`(run.py 경로 충돌 해소, I-08)과 ML_miniops 런처 구현 Task(아직 생성 안 됨)가 deps에 빠져 있어 실행해도 DoD(코드 리뷰)를 채울 수 없었다. T-019 실행 결과 outcome=blocked, I-10과 동일 결론만 재확인(threat-model.md §1.5) | T-019가 선행조건 없이 선택 가능해 보여 중복 재확인을 유발함 | 조치 완료(tasks.md T-019 deps 에 T-033 추가) — T-033 은 해소(설계 수준)됐으나 ML_miniops 런처 구현 Task 자체는 아직 미생성이라 T-019는 계속 Blocked 유지 필요 | (STM-0011) |
+| I-13 | ADR-005(D-16, STM-0013) 로 ML_miniops 엔트리포인트가 `app/__main__.py` 로 재지정됐지만, 아래 문서들에는 여전히 구 경로(`run.py`) 표기가 남아 있음: `workspace/teams/backend/charter.md`(L32,L82), `workspace/teams/ops/charter.md`(L19,L79), `workspace/project/ops/runbooks.md`(§2.2 L51/57, §4.1 L76-92 "주의 — run.py 경로 중복" 섹션, §5), `workspace/project/40-team-composition.md`§1(L24, backend 담당 디렉토리 목록) | backend/ops Task 수행 시 구 경로를 참조해 혼란 유발 가능 | 열림 — Task 후보: `[backend]` charter 갱신(런처 구현과 함께), `[ops]` charter+runbooks.md 갱신, `40-team-composition.md`§1 은 소유 팀 불명(어떤 charter 에도 "소유"로 명시 안 됨) — 오케스트레이터가 처리 방식 결정 필요 (tasks.md 반영 필요) | (STM-0013) |
+| I-16 | `_safe_storage_name()` 코드가 `app/api/models.py`(T-010, D-20)와 `app/api/datasets.py`(T-011)에 동일 로직으로 2곳 중복됨 — T-011 에서 D-20 패턴을 "공유 유틸 추출 없이 그대로 복제 재사용"하라는 지시를 따른 결과. qa/architecture 리뷰 모두 "지금은 2곳 수준이라 추출 보류가 03§1 과설계 금지 원칙에 부합"으로 공통 판단 | 세 번째 업로드 라우터가 추가되는 시점부터 중복 3곳으로 늘어나 유지보수 비용 발생 가능 | 열림 — Task 후보: `[architecture]` 세 번째 업로드 라우터 생기기 전/시점에 공유 유틸(예: `app/eval/storage.py`) 추출 여부 판단 (tasks.md 반영 필요) | (STM-0016, STM-0018) |
+| I-17 | `app/`, `tests/`, `requirements.txt` 가 T-005~T-011 누적 작업 전체에서 git 에 커밋되지 않고 untracked 상태로 남아 있음(cicd 리뷰에서 `git status` 로 확인) | 누적 작업 손실 위험, PR/커밋 소유권(backend 또는 오케스트레이터) 불명확 | 열림 — Task 후보: `[backend 또는 오케스트레이터]` 커밋 소유권 확인 후 최초 커밋 수행 (tasks.md 반영 필요). T-012 가 추가한 `app/web/*`, `tests/integration/test_web_upload_page.py` 도 동일하게 미추적 상태(신규 발견 아님, 범위만 확장) | (STM-0018, STM-0019) |
+| I-18 | `app/web/routes.py` 의 "self-registration on import" 패턴(backend 소유 FastAPI `app` 싱글톤에 import 부작용으로 `.mount()`/`.include_router()`)이 구현·테스트(46 passed)·qa/cicd/product/security 리뷰는 PASS 했지만, 신규 구조적 결정에 ADR 이 없어 architecture 리뷰 게이트 FAIL — 이 저장소는 ADR-004/005 처럼 더 작은 결정도 ADR 로 남긴 선례가 있어 기준 미달. architecture 리뷰어가 "T-012(frontend) 자체는 재작업 불필요, 조치는 architecture/backend 의 후속 기록 작업"이라고 명시해 2회 재시도 루프는 건너뜀(outcome=partial) | `app/__main__.py`(T-036) 구현 방식, 20§9 리스크 표 | 열림 — Task 후보: `[architecture]` ADR(가칭 ADR-006) 작성 또는 20§4/§6 갱신으로 self-registration 패턴을 공식 채택할지, T-036 에서 명시적 composition root(직접 `include_router`/`mount` 호출) 방식으로 바꿀지 결정. 결정 시 20§9 에 R7("`app/__main__.py` 의 `import app.web` 누락 시 웹 UI 전체 조용한 404") 추가. 결정 후 `app/api/__init__.py` docstring "의존: app.web" 문구 정정은 `[backend]` 에 전달 (tasks.md 반영 필요) | (STM-0019) |
+| I-19 | `app/__main__.py`(T-036, backend)가 `from app.api import app` 뒤에 `import app.web` 을 포함하지 않으면 API 는 정상 동작하지만 업로드 화면("/")·정적 파일("/static/*")은 라우트 미등록으로 전부 404 됨(I-18 의 self-registration 패턴 전제) | T-036 구현 DoD, T-036 이후 브라우저 수동 확인 | 열림 — Task 후보: `[backend]` T-036 DoD 에 `import app.web` 포함 확인 항목 추가 (tasks.md 반영 필요) | (STM-0019) |
+| I-20 | 동일 (model_id, dataset_id) Link 조합의 "중복 연결" 정책이 여전히 미정 — FR-001.md Out of scope 항목(기존 I-02 는 model/dataset 재업로드 정책이라 별개 이슈). 현재 `app/api/links.py` 구현(D-23)은 DB 복합 PK 제약을 그대로 409 Conflict 로 번역하는 임시 선택일 뿐, 멱등 허용(재호출도 200/201) vs 명시적 거부(409 유지) 중 비즈니스 정책 확정은 아직 없음 | FR-001 수용 기준, links API 의 향후 호환성(정책 변경 시 응답 코드 변경 가능) | 열림 — Task 후보: `[architecture]` 중복 연결 정책을 ADR 또는 FR-001 수용 기준에 반영해 확정 (tasks.md 반영 필요) | (STM-0020) |
 
 ## 4. 팀별 지식 (Team Knowledge)
 <!-- /aidlc-teams 가 생성된 팀마다 "### <team-id>" 소제목을 추가한다 -->
 
 ### product
-- (아직 없음)
-- 스토리 6건(FR-001~005, SCOPE-01, AC 114개) + uat-checklist. A11 은 T-014 화면 리뷰 후 assumption 해제 (STM-0006)
-- T-014 문서화 범위 완료(outcome partial): `monitor/README.md`, `docs/README.md`, `docs/api/README.md`, `docs/guide/README.md` 생성, FR-005 AC-18 을 D-39 규칙으로 갱신. UAT 실기(KPI-01, K2-W/K2-U, R-1~R-3, statusLine 실세션, A11 PO 리뷰)는 미수행·`미실행` 유지 → P1 은 UAT 없이 완료 불가. 실기 후 README·가이드의 "미검증" 문구 갱신 (STM-0019)
+(아직 없음 — Task 수행 후 축적)
 
 ### architecture
-- (아직 없음)
-- ADR 변경은 20 의 에러 코드 목록(§5)·컴포넌트 표 문구까지 같이 고친다. Task 문구의 절 번호는 grep 으로 실제 위치를 확인 (STM-0005)
-- SKILL 흐름은 scratch 사본에서 실제 CLI 로 드라이런해 검증한다(exit 20 은 paused_since 조작 또는 시계 주입) (STM-0015)
-
-### qa
-- (아직 없음)
-- fixture 9종(workspace, jsonl_gen, claude_home, hashing, markers, contracts, runtime_files, reference_parser) + smoke 72건. 실행: `monitor/.venv/bin/python -m pytest monitor/backend/tests -q` (STM-0004)
-- home_guard + test_home_guard(21건). 전체 95 passed. 반쪽 커밋 재개 때 실패 원인은 `import os` 누락 하나였다 (STM-0007)
-- T-013 시나리오(`tests/scenarios`, 공용 `fixtures/{engine,live_server,endpoints}.py`): 가드레일 500 0건 38, 본문 비노출 15(응답·헤더·caplog·실서버 로그·SSE 프레임), 해시 불변 8, 일시정지/재개 E2E 6(정상, 2시간 초과 exit 20, heartbeat 만료 V6, 깨진 .control.json 3종 exit 2). `pytest monitor/backend/tests -q` 1078 passed(perf 10 deselected), `-m "perf or not perf"` 1088 passed(99.6 s), check.py 12/12 PASS. perf 규칙은 D-52, fixture·실서버 패턴은 §2 (STM-0018)
-- perf 실측(Linux, Python 3.13, 캐시 따뜻함, 실서버+HTTP; 하한 332.8 MB / 상한 637.8 MB, 33,891줄 / 52파일, Task 100): fixture 생성 2.9/5.3 s, 시작→health 0.57/0.52 s, 첫 화면 Must 패널 8개 동시 요청 0.34/0.28 s(기준 ≤ 2 s, 사용량 status=warming), 데우기 완료 0.85~1.1/1.36 s, REST p95 3.1~6.4 ms(하한, 기준 ≤ 200 ms), 파일 변경→SSE changed 0.52 s(기준 ≤ 5 s). NFR-001 충족 (STM-0018)
-
-### cicd
-- (아직 없음)
-- .gitignore 의 Monitor 항목은 런타임 / build·dev 두 주석 블록. dist 는 의도적으로 제외(ADR-005) (STM-0002)
-- 런처 실측: 깨끗한 상태 4.6~4.9 s(KPI-02 ≤ 5분), 재실행 설치 생략, 포트 점유 시 다음 포트, launcher 테스트 37건 (STM-0012)
-
-### ops
-- (아직 없음)
-- health·logging·runbook 5종(`workspace/project/ops/`), tests/ops 40건. 변이 11/11 검출 (STM-0011)
-
-### security
-- (아직 없음)
-- 보안 문서 경로는 `workspace/project/security/` (threat-model.md = STRIDE 6영역, privacy.md = 허용 필드·접근 범위·Host/Origin·체크리스트). charter·40·타 팀 charter 모두 이 경로를 참조 (STM-0003)
-- 보안 경계는 "허용 필드 allow-list 복사"다. `"usage":` 사전 필터는 성능용이며 보안 경계가 아니다 (본문에 usage 문자열이 있어도 유입되지 않음) (STM-0003)
-- 체크리스트 ID 체계는 §2 참조 (P-/N-/W-/D-/T-). 비-JSON Content-Type 도 403 FORBIDDEN_ORIGIN 이 기준 (D-14) (STM-0003)
-- 쓰기 경로는 `.control.json` 1개뿐 (R-10·QS-07). Origin 없는 로컬 POST 는 수용된 잔여 위험 (D-15) (STM-0003)
-- 런타임 감사: 임시 audit-hook 플러그인으로 전체 테스트 중 실제 HOME 아래 open/listdir/scandir 0건 확인하는 방식이 유효했다 → conftest 상시 가드로 승격 예정 (STM-0004)
+- app/ 스캐폴드 생성 완료, contracts/ 디렉토리는 의도적으로 생성하지 않음(계약 원천은 20§5) (STM-0002)
+- T-009(Repository 쿼리 함수 구현) 의 backend 소유 표기를 공식 재승인 — dba charter §2·§1, LTM D-09 세 출처가 모두 일치함을 대조. "스키마/DDL/인덱스/제약=dba, 쿼리 함수 구현=backend" 분할은 의도적 설계(예외 아님)이며 추가 ADR 불필요 (STM-0010)
+- ADR-005(D-16) 작성 완료 — ML_miniops 엔트리포인트를 `run.py`에서 `app/__main__.py`(`python -m app`)로 재지정, 저장소 루트 `run.py`는 AI-DLC Monitor 전용으로 보존. ops 리뷰 PASS. 20-architecture-analysis.md §1/§4/§6/§8 갱신. backend/ops charter·runbooks.md·40-team-composition.md 의 구 경로 표기 갱신은 각 소유 팀 Task 후보로 남김(I-13) (STM-0013)
+- ADR-004(D-15) 작성 완료 — 동일 (model, dataset) 재업로드 시 항상 신규 레코드 생성(기존 DDL이 이미 전제하던 동작을 공식화). product 리뷰 PASS. FR-001/FR-002 stories 의 Out of scope 문구 갱신은 product Task 후보로, repository.py 주석 갱신은 backend(T-009 수행 시) Task 후보로 남김(architecture 소유 범위 밖) (STM-0012)
+- D-22: `20-architecture-analysis.md`§5 에 `GET /models`/`GET /datasets` 계약 행 추가 완료(D-21 재확인·실행), 신규 ADR 불필요. 리뷰 게이트 해당 없음(40§5 기준 적용 대상 팀 없음). T-011(backend) 착수 가능 상태로 전환, 신규 Task 후보 없음 (STM-0017)
+- T-012(frontend) 리뷰 게이트 FAIL — `app/web/routes.py` 의 self-registration on import 패턴(I-18)에 ADR 이 없음을 이유로. 의존 방향·파일 소유권 자체는 PASS 했고, "frontend 재작업 불필요, 조치는 architecture/backend 후속 기록 작업"이라고 명시해 재시도 루프를 건너뛰게 함. 미결 결정: ADR-006 작성(self-registration 공식 채택) vs T-036 에서 명시적 composition root 로 전환 — 아직 미확정("제안" 상태로만 LTM §2 패턴에 기록) (STM-0019)
 
 ### backend
-- (아직 없음)
-- API 앱 셸 23 모듈, 테스트 426건(unit 8·api 11 파일), 커버리지 98%. 실행: `cd monitor/backend && ../.venv/bin/python -m pytest --cov=app -q -p no:cacheprovider`, 서버: `AIDLC_MONITOR_PORT=<port> ../.venv/bin/python -m app` (STM-0010)
-- 루프 제어: CLI `aidlc/scripts/loop_control.py` + `app/{services,models,api}/control.py`, 테스트 811건(커버리지 98%), 로컬 게이트 전 단계 PASS (STM-0014)
-- 사용량: `app/services/usage/{collector,resolver,safe_open}.py`, `statusline_reader.py`, `api/usage.py`, `aidlc/hooks/statusline.{sh,py}`. 테스트 1000건(커버리지 97%), 310 MB/30파일 데우기 약 1.2 s(ops 실측) (STM-0016)
+- `app/eval/repository.py` 쿼리 함수(CRUD) + `tests/test_repository.py`(20개, 전부 PASS) 작성 완료. qa 리뷰 PASS. ID 발급은 Repository 내부(`uuid.uuid4()`)에서 수행 — T-010/T-011/T-013/T-015 가 따를 계약. 부작용으로 I-07/T-032(ruff format) 해소 (STM-0014)
+- `POST /models`(FR-002) 구현 완료(D-19) — FastAPI `app` 최초 생성(`app/api/__init__.py`), `app/eval/model_loader.py`(predict 계약 검증), 업로드 경로 이탈 방지 패턴 `_safe_storage_name()`(D-20). 5개 팀 리뷰(qa/cicd/product/architecture/security) 전원 PASS(security 는 1차 FAIL→조치→재검증 PASS). GET /models/GET /datasets(D-21), ruff B008 noqa 반복(I-15) 는 후속 Task 로 이전 (STM-0016)
+- `get_connection()` 에 `PRAGMA foreign_keys = ON` 추가(D-18), FK 강제 단위 테스트 6건 추가(26개 전체 PASS). qa 리뷰 PASS(단, 영구 `.venv/` 생성 관례 변경은 cicd 결정 보류, I-14) (STM-0015)
+- `POST /models`(D-19) 구현 — FastAPI `app` 최초 생성, model_loader.py, 33개 테스트 전체 PASS. qa/cicd/product/architecture 리뷰 PASS, security 는 1차 FAIL(CWE-22 경로 이탈)→조치(D-20)→재검증 PASS. GET /models/GET /datasets 신규 계약 필요성 발견(D-21, architecture 결정) → T-011 과 함께 구현 필요 (STM-0016)
+- `POST /datasets`(FR-002, D-21/D-22 계약) + `GET /models`/`GET /datasets` 구현 완료 — `app/api/datasets.py` 신규, CSV "마지막 컬럼=라벨" 검증은 pandas 없이 표준 `csv` 모듈로 처리, 저장 경로는 `_safe_storage_name()`(D-20)을 models.py 와 동일 로직으로 복제 재사용(I-16, 중복 2곳). qa/cicd/product/architecture/security 5팀 전원 PASS, 신규 테스트 10건 포함 40 passed, `workspace/data/` 미생성 테스트 격리 확인 (STM-0018)
+- `POST/GET /links`(FR-001, D-23 계약) 구현 완료 — `app/api/links.py` 신규, Repository 의 기존 `create_link`/`list_links`(T-009, D-17)를 그대로 재사용하고 라우터·에러 매핑(404/409)·테스트만 추가. models.py/datasets.py 와 동일한 `get_db` 의존성 패턴을 3번째 라우터로 재확인. qa/product 2팀 PASS(파일 업로드·의존성 변경·신규 계약·스키마 변경이 없어 cicd/architecture/security/dba 는 40§5 리뷰 게이트 적용 대상 아님). `pytest tests/` 53 passed, `ruff format --check`/`ruff check` 통과. 링크 중복 정책은 미정으로 남겨둠(I-20) (STM-0020)
 
 ### frontend
-- `monitor/frontend/src/{lib/{api,store,events,format,chart}.ts, components/*Panel.vue}`. topic → 재조회 매핑은 `store.TOPIC_KEYS`(`tasks` → tasks+plan, `usage` → summary+timeseries, 모르는 topic 무시). 번들 631 kB(gzip 218 kB, 대부분 ECharts) (STM-0017)
-- 실서버 E2E: loop-start 후 화면 반영 0.8 s(SSE), 일시정지 클릭 → `.control.json` seq 1 pause → loop-check exit 10, 재개·loop-end 반영 확인 (STM-0017)
-- 계약 문서는 jsonschema Draft202012 로 check_schema + examples + 음성 케이스까지 돌려 검증한다 (STM-0001)
-- 경로성 필드는 패턴 검증 + resolve 후 경계 검사 + 노출 금지 3종을 같이 요구한다. symlink 우회 여부는 backend reader 리뷰 때 재확인 (STM-0001)
+- `app/web/routes.py`(`GET /`)+`templates/base.html`/`upload.html`+`static/style.css`/`upload.js` 로 업로드 화면(모델/데이터 폼, problem_type/framework 라디오, R2 경고 배너, 목록, 로딩/오류/빈 상태) 구현 완료(FR-002 AC-1~6). backend 소유 `app/api/__init__.py` 는 수정하지 않고 import 부작용 self-registration 패턴으로 통합(I-18). `requirements.txt` 에 jinja2/MarkupSafe 직접 추가(D-19 선례). 신규 테스트 6건 포함 46 passed, 실제 uvicorn+curl round-trip 재확인. qa/cicd/product/security 리뷰 PASS, architecture 는 ADR 부재로 FAIL(재작업은 불필요로 명시, I-18 로 후속 추적) (STM-0019)
+
+### dba
+- `app/eval/repository.py` 에 `SCHEMA_DDL`(5테이블·enum 5종 CHECK·인덱스 3개) + `init_schema(conn)` 생성 완료, 30§5.1 ERD/ADR-003 과 1:1 일치(architecture·qa 리뷰 PASS). 파일 하단에 "쿼리 함수(backend 소유, T-009)" 경계를 주석으로 명시 (STM-0003)
+
+### qa
+- `workspace/project/qa/test-strategy.md`(테스트 피라미드, charter §9 필수 시나리오 5종 매핑, FR×AC×TC×레벨×Phase×구현 Task×상태 추적표) + `workspace/project/qa/test-cases/FR-001~005.md`(FR 별 전체 AC 의 Given/When/Then) 작성 완료. 구현 Task(T-009 이후)가 아직 없어 모든 TC 상태는 `planned`(실행 안 한 것을 통과로 표기하지 않음, 02§5) — 이후 각 구현 Task 의 qa 리뷰에서 D-10 의 TC ID 를 인용해 STM §7 에 실행 결과 기록 (STM-0004)
+- `tests/fixtures/`(qa 소유)에 분류/회귀 fixture 쌍(classification_data.csv, regression_data.csv, dummy_classifier.py, dummy_regressor.py)과 네거티브 fixture(no_predict.py, bad_single_column.csv — TC-002-04/05 용) 작성 완료. scratchpad 의 격리 임시 venv 에서 12/12 검증 PASS(predict 존재·callable, 분류 정확도 0.833, 회귀 RMSE 0.088, 네거티브 2건 확인) — venv 자체는 저장소에 커밋하지 않음 (STM-0005)
+
+### cicd
+- 루트 `requirements.txt`(ML_miniops `app/`+`tests/fixtures/` 전용) 작성 완료 — D-12 참고. 새 venv 로 설치 재현 + T-005 fixtures 6케이스 pytest PASSED 로 검증. 1차 qa 리뷰에서 검증용 임시 파일(`_t030_verify_fixtures.py`) 잔존으로 FAIL 받았고, 삭제·재확인 후 2차 PASS (STM-0006)
+- 로컬 게이트 체크리스트/명령을 D-13 으로 확정하고 `requirements.txt`(ruff==0.17.2 추가) + `workspace/teams/cicd/charter.md` §3/§7/§9/§10 을 실측 결과로 갱신 완료. 격리 `.venv` 에서 `ruff check app tests` 0 위반, `ruff format --check app tests` 1건(비소유 파일, I-07 로 이전), `pytest tests` 0 items collected(실패 아님, T-009+ 이후 의미 갖게 됨) 확인 후 `.venv`/`.pytest_cache` 삭제·잔존 없음 재확인 (STM-0007)
+
+### ops
+- `workspace/project/ops/runbooks.md` 작성 완료(로그 레벨 매핑표+체크리스트, QS-2 재시작 복구 7단계 절차, 포스트모템 최소 기록, 로컬 실행 환경/포트 충돌 대응, 남은 일). 저장소 루트 `run.py` 실제 코드를 읽고 20-architecture-analysis.md 와 대조해 경로 충돌(I-08)을 발견. 평가 실행기 미구현 상태라 QS-2 절차는 실행 검증 대신 설계 문서 교차 확인으로 작성(02§5 준수) (STM-0008)
+
+### security
+- `workspace/project/security/threat-model.md`(NFR-003 코드 리뷰, R2 경고 문구 확인, STRIDE 간략 매핑) + `privacy.md`(NFR-005 재확인 체크리스트) 작성 완료. NFR-003/R2 는 ML_miniops 런처·업로드 화면이 아직 구현되지 않아 "설계 문서 수준 PASS, 구현 후 실측 재검증 필요"로 명확히 구분해 기록(02§5 준수, I-10/I-11) (STM-0009)
+- T-019(서버 바인딩 검증) 재시도 — ML_miniops 런처 코드가 여전히 없어 outcome=blocked. threat-model.md §1.5 에 재확인 기록 추가. T-033(architecture)·backend 런처 구현·T-034(security 실측)로 이어지는 체인이 끝나야 해소됨(I-12) (STM-0011)
 
 ## 5. 교훈 (Lessons Learned)
 - (반복하지 말아야 할 실수, 효과가 있었던 방법)
-- examples 만이 아니라 음성 케이스까지 스키마로 돌려야 `format` 비강제, `$` 끝 개행 같은 구멍이 드러난다 (STM-0001)
-- 보안 리뷰는 계약 단계에서도 효과가 있다 — 구현 전에 경로 이탈(`..`) 위험을 막았다 (STM-0001)
-- 번호 참조를 문서 두 개에 나눠 쓰면 어긋나기 쉽다 — 한 문서에서 ID 를 정의하고 다른 문서는 참조만 한다 (STM-0003)
-- 리뷰 모드가 문서 대조만으로도 구현 전 모순(415 vs 403, Host 포트 무시 vs N-02)을 잡아냈다 (STM-0003)
-- 중단된 세션을 이어받을 때는 테스트 통과만 보지 말고 모듈을 끝까지 읽고 `git status`·커밋과 대조해 반쯤 쓴 파일이 없는지 확인한다 (STM-0004)
-- Task 문구에 적힌 문서 절 번호는 틀릴 수 있다(20 §8 → 실제 §5). 수정 전에 grep 으로 위치를 확인한다 (STM-0005)
-- 가정을 확정할 때는 프레임워크 스크립트를 실제로 돌려 경계 동작(템플릿 직후 상태, 빈 대상 PASS)을 확인해야 오판을 막는다 (STM-0006)
-- 중단 후 커밋된 반쪽 변경은 실패 원인이 사소한 경우가 많다 — 갈아엎기 전에 먼저 실행해 원인을 확인한다 (STM-0007)
-- ADR 이 확정되면 그 ADR 을 인용하는 체크리스트의 "선택"/"후보" 문구를 같은 Phase 안에 정리한다 (STM-0008)
-- 한정 자원(연결 슬롯)을 잡는 경로의 보안 검사는 메서드가 아니라 경로로 건다 — 프레임워크가 자동으로 붙이는 메서드(HEAD)로 우회되지 않게 (STM-0009)
-- "읽기 전용" 은 파일 열기 모드만이 아니라 import 부수 효과(.pyc)까지 본다 — 임시 디렉터리 실측으로 잡았다 (STM-0010)
-- 프레임워크가 문서 작성 시점보다 새로우면 소스를 직접 읽고 테스트로 고정한다 — LTM 의 Starlette 함정 설명과 FastAPI 0.161 실제 동작이 달랐다 (STM-0010)
-- 의존성 교체(httpx→httpx2)는 로거 이름 같은 부수 효과로 다른 팀 테스트를 깬다 — 고정 전에 새 venv 로 전체 테스트를 돌린다 (STM-0012)
-- ADR 사실 문장(라이선스·릴리스일)은 표본이 아니라 전수 실측으로 쓴다 — T-007 은 이 때문에 architecture 재리뷰를 2회 받았다 (STM-0012)
-- 상태 파일 장애는 "삭제" 와 "손상" 을 따로 설계한다 — 동작이 다르다(없음 = 정상 대기, broken = exit 2 계속) (STM-0013)
-- 무한 스트림 엔드포인트를 TestClient 로 GET 하면 스위트가 멈춘다 — 슬롯을 미리 채워 503 으로 "핸들러 도달" 을 확인한다. 테스트 안에서 uvicorn 을 띄울 땐 `log_config=None` (로깅 설정이 바뀌어 다른 테스트가 깨짐) (STM-0017)
-- 로컬 1인 도구에 Task 당 다중 리뷰 Agent + 재리뷰 루프는 과했다 — P1 이 14 → 21 Task 로 늘고 화면이 마지막까지 없었다. 보이는 결과물을 먼저 만들고 게이트로 검증한다 (STM-0017)
-- 선형 추정(test-strategy §5)도 실측으로 확인하면 근거가 된다 — 30일 JSONL 추정 329/658 MB 는 실측 332.8/637.8 MB 로 정확했다 (STM-0018)
-- 테스트가 제품의 숨은 타이밍 동작(SSE 첫 tick 기준선 흡수)을 드러내면 결함으로 단정하지 말고 영향(프론트 재조회로 무해)을 따져 관찰로 기록한다 (STM-0018)
-- 범위 합의로 사람 실기 UAT 를 못 한 Task 는 done 으로 닫지 말고 partial + UAT Task 후보로 이월한다 — 컨테이너 측정(Node 설치됨)은 "Node 없음" 같은 조건을 증명하지 못한다. 백그라운드 런처는 SIGINT 가 무시되므로 SIGTERM 으로 종료한다 (STM-0019)
+- 설계 문서(20§4/§5)가 이미 디렉토리/파일명까지 구체적으로 명시해두면, 스캐폴드 Task 는 "새 구조 설계"가 아니라 "이미 합의된 구조 생성"으로 축소된다 (STM-0002)
+- 같은 파일을 서로 다른 팀이 이어서 수정할 때(dba→DDL, backend→쿼리 함수), 파일 내부에 소유권 경계를 주석 섹션으로 명시해두면 다음 담당자가 수정 범위를 헷갈리지 않는다 (STM-0003)
+- 테스트 전략 문서는 "FR×AC×TC" 요약표만 두고 상세 GWT 는 별도 test-cases/FR-xxx.md 로 분리하면 전략 문서가 과도하게 길어지지 않으면서도 추적성(traceability)을 함께 만족시킬 수 있다 (STM-0004)
+- 02§11(전역/시스템 Python 환경에 설치 금지)은 "검증을 생략하라"는 뜻이 아니다 — scratchpad 의 격리된 임시 venv 를 만들어 실제로 실행 검증하고, venv 자체는 저장소/영구 환경에 남기지 않는 방식으로 "실행하지 않은 검증을 통과로 쓰지 않는다"(02§5)를 지키면서도 시스템 환경을 보호할 수 있다 (STM-0005)
+- "검증 후 임시 파일 전부 삭제" 같은 결과 서술은, 삭제 루틴을 실행했다는 사실만으로 적지 말고 `git status --short` 등으로 실제 잔존 여부를 재확인한 뒤에 적어야 한다 — STM-0006 에서 cicd 가 1차 정리 후 "잔여물 없음"이라고 적었지만 검증용으로 리포 루트에 복사해 둔 파일 하나가 실제로는 남아 있었고, qa 리뷰가 이를 FAIL 로 잡아냈다 (STM-0006)
+- 팀 charter·user 문서에 이미 적혀 있는 명령도 "글로만 보지 말고 실제로 실행해 재현"해야 숨은 가정(저장소에 여러 프로젝트가 공존)이 드러난다 — charter §10 원문 명령이 repo 루트에서는 실제로 깨지는 것을 실행으로 확인한 뒤에야 D-13(경로 명시)으로 고칠 수 있었다 (STM-0007)
+- 설계 문서가 구체적 파일 경로(예: `run.py`)를 지정해도, 그 경로에 **이미 다른(무관한) 파일이 존재**하는지 실제로 읽어 확인해야 한다 — 이 저장소처럼 서로 무관한 프로젝트(ML_miniops / AI-DLC Monitor 프레임워크 자체)가 같은 루트를 공유하면 설계 문서만 보고는 경로 충돌(I-08)을 알아챌 수 없다 (STM-0008)
+- 여러 리뷰 팀을 동시에 호출했을 때 서로 결론이 상충하면(예: product "Repository 직접 조회로 충분" vs architecture "신규 JSON 계약 필요") 더 강한 설계 제약(20§4 다이어그램의 edge, 팀 charter 의 명시적 소유/계약 문구)을 근거로 하나의 팀이 명시적으로 대조·기각하고 STM §7 에 그 대조 과정을 기록해야 한다 — 그래야 다음 Task 담당자가 "어느 쪽이 최종 결정인지" 헤매지 않는다 (STM-0016)
+- 보안 리뷰에서 "코드 리뷰로 확인"이라고 적을 때는 리뷰한 코드가 실제로 해당 Task 의 대상 컴포넌트인지(여기서는 ML_miniops) 재차 확인해야 한다 — 저장소에 동명의 경로/설정을 쓰는 무관한 프로젝트가 공존하면(I-08) 엉뚱한 코드를 리뷰해 거짓 PASS 를 낼 위험이 있다 (STM-0009)
+- 다른 팀 소유 파일을 "수정하지 않는다"는 제약은, 그 파일이 들고 있는 객체(예: FastAPI `app` 싱글톤)를 런타임에 import 해서 확장하는 것까지 막지는 않는다 — 단, 설계 다이어그램에 의존 방향이 이미 명시돼 있어도 그 통합 방식 자체가 신규 구조적 패턴이라면 "소유권 침범 아님"과 "ADR 필요 없음"은 별개 판단이다. 이 저장소에서는 전자는 PASS, 후자는 FAIL 이었다(I-18) — 기존 ADR 선례(더 작은 결정도 ADR 화)가 있으면 리뷰 기준도 그에 맞춰 엄격해진다 (STM-0019)
+- TestClient 기반 통합 테스트만으로는 "실제 바이트가 네트워크 소켓을 거쳐 왕복하는지"(StaticFiles 마운트, 실제 멀티파트 바디 파싱)를 완전히 재현하지 못할 수 있어, 짧게라도 실제 서버 프로세스를 띄워 curl 로 재확인하는 한 단계를 추가하면 "실행하지 않은 검증을 통과로 쓰지 않는다"(02§5)를 더 엄격히 지킬 수 있다 (STM-0019)
+- Repository 계층(프레임워크 독립 도메인 로직, D-09/D-17)이 선행 Task 에서 먼저 구현돼 있으면, 이후 API 라우터 추가 Task 는 도메인 로직 재구현 없이 라우터·에러 매핑·테스트에만 집중할 수 있어 작업 속도가 실제로 빨라진다 — 계층 분리의 효과가 3번째 라우터(links)에서도 재확인됨 (STM-0020)
 
 ## 6. 용어집 (Glossary)
 | 용어 | 정의 |

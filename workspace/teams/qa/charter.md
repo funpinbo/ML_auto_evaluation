@@ -16,7 +16,7 @@ status: draft
 테스트 전략을 세우고 수용 기준을 자동화된 테스트로 만들어, 모든 변경이 Definition of Done 을 충족하는지 독립적으로 검증한다.
 
 - 생성 근거: 항상 — 모든 Task 의 품질 검증 게이트
-- 프로젝트 적용: core. 20 §4 "테스트 스위트 & fixture → qa", 02 §5 필수 테스트(일시정지/재개 시나리오, 깨진 파일·빈 workspace), 30 §6 "fixture 생성기·성능 테스트는 qa". 단위·API 테스트는 user/02 §10 DoD 에 따라 개발 팀이 쓴다(40 §1.1) (40 §1)
+- 프로젝트 적용: 30§6 데이터 파이프라인 표가 이미 qa 를 "테스트 픽스처 확보" 담당으로 지정했다(분류용/회귀용 합성 CSV 1쌍 + 더미 sklearn 모델 스크립트, `tests/fixtures/`). 02§5 "실제 사용자 업로드 데이터 대신 더미 모델/데이터로 테스트" 표준을 그대로 집행한다. 코드 변경 Task 는 qa 리뷰가 항상 필수(CLAUDE.md).
 
 ## 2. 책임 범위
 **소유 (Owns)**
@@ -25,17 +25,12 @@ status: draft
 - 성능/부하 테스트 시나리오
 - 테스트 데이터·픽스처 관리 규칙
 - 결함(버그) 리포트
-- (data 인수) 가짜 JSONL 생성기(30 EDA `bench_synthetic.py` 이식), 본문 표식 문자열 fixture
 
 **하지 않음 (Not owns)**
 - 기능 코드 수정 (결함은 담당 팀 Task 후보로 남긴다)
 - 단위 테스트 작성 책임 (개발 팀)
 
-- 프로젝트 적용 (실제 디렉토리/컴포넌트):
-  - `monitor/backend/tests/conftest.py`, `tests/fixtures/`(가짜 workspace 빈/일부/전체/깨짐/closed STM, 30일 JSONL, 스냅샷), `tests/scenarios/`(일시정지/재개, 깨진 입력, 해시 불변, 본문 비노출, Hook 규칙 대조), `tests/perf/`(Task 100 + 30일)
-  - `monitor/frontend/tests/` (fixture API 응답, 통합 spec)
-  - `workspace/project/qa/` — `test-strategy.md`, `test-cases/FR-xxx.md`, Phase 품질 리포트
-  - **하지 않음:** `monitor/backend/tests/unit/`, `tests/api/`(backend), `monitor/frontend/src/**/*.spec.ts`(frontend)
+- 프로젝트 적용 (실제 디렉토리/컴포넌트): `tests/fixtures/`(합성 분류용 CSV 1개 + 회귀용 CSV 1개, 각각 대응하는 더미 `predict(X)->y` 모델 스크립트, 30§6), `tests/`(선택, 02§3). 기능 코드는 수정하지 않는다 — 결함은 STM §5 에 담당 팀(`[backend]`/`[frontend]`/`[dba]`) Task 후보로 남긴다.
 
 ## 3. 산출물
 - test-strategy.md
@@ -52,26 +47,19 @@ status: draft
 ## 5. 담당 요구사항
 | FR/NFR | 내용 | Phase |
 |--------|------|-------|
-| NFR-001 | 첫 화면 ≤ 2초, 변경 반영 ≤ 5초 성능 테스트(QS-01·02) | P1 |
-| NFR-002 | 깨진 파일·빈 workspace·스냅샷 없음에서 HTTP 500 0건(QS-03·04) | P1 |
-| FR-005 | 일시정지/재개/2시간 초과/heartbeat 만료 시나리오(QS-11) | P1 |
-| CON-03 | 조회 API 전후 workspace 해시 불변(closed STM fixture 포함, QS-07) | P1 |
-| NFR-003 | fixture 본문 표식 문자열이 응답·로그에 0건(QS-06) | P1 |
-| FR-003 | `aidlc.py status` 와 같은 결론인지 Hook 규칙 대조 | P1 |
-| FR-006~010 | P2 기능 수용 기준 테스트 케이스 | P2 |
+| FR-001~004 | 핵심 파이프라인 E2E(업로드→N:M 연결→지표 선택→Run→저장 확인) | P1 — fixture 먼저 준비(개발 착수 시 1회, 30§6) |
+| FR-003 | 호환성 필터 회귀(비호환 조합 `skipped_incompatible` 처리, 30§3 합성 검증 재현) | P1 |
+| FR-005 | 결과 시각화 기본 비교(P1), 상관관계 그래프(P2) 테스트 | P1/P2 |
 
 ## 6. 협업 인터페이스
-- product: 수용 기준
-- 모든 개발 팀: 결함 수정·테스트 ID
-- cicd: 테스트 게이트 파이프라인
-- ml: AI 응답 회귀 테스트
+- product: 수용 기준(stories/FR-xxx.md)을 테스트 케이스로 전환
+- backend/frontend/dba: 결함 리포트, 테스트 ID(`data-testid`) 합의
+- cicd: 로컬 게이트에 pytest 실행 단계 포함 (ml 팀 부재 — AI 응답 회귀 테스트 해당 없음, 40§2)
 
 | 방향 | 상대 팀 | 계약 | 위치 |
 |------|---------|------|------|
-| 사용 | product | 수용 기준 | `workspace/project/stories/` |
-| 제공 | backend, frontend | fixture 생성기·본문 표식 문자열 | `monitor/backend/tests/fixtures/`, `monitor/frontend/tests/fixtures/` |
-| 제공 | cicd | 테스트 명령·커버리지 기준(≥ 70%) | `workspace/project/qa/test-strategy.md` |
-| 사용 | security | 허용 필드 체크리스트(본문 비노출 테스트 기준) | `workspace/project/security/privacy.md` |
+| qa → backend/frontend | 더미 fixture(분류·회귀 CSV + 모델 스크립트) | 파일 | `tests/fixtures/` |
+| qa → 담당 팀 | 결함 리포트 | STM §5 Task 후보 `[팀id]` | `workspace/memory/short-term.md` |
 
 ## 7. 팀 Definition of Done
 - [ ] user/02 §10 공통 DoD
@@ -95,7 +83,7 @@ status: draft
   - [ ] 엣지/오류 케이스가 테스트되었는가
 
 ## 10. 팀 표준 (user/02 구체화)
-- 언어/프레임워크: pytest + FastAPI TestClient + pytest-cov, vitest + @vue/test-utils + jsdom
-- 디렉토리: 위 "프로젝트 적용" 목록
-- 테스트 명령: `cd monitor/backend && python -m pytest` (커버리지 `python -m pytest --cov=app --cov-report=term-missing`, 라인 ≥ 70%), `cd monitor/frontend && npm test`
-- 규칙: 실제 `~/.claude` 를 테스트에 쓰지 않는다(02 §5). 경로는 `AIDLC_ROOT`·`CLAUDE_HOME` 환경 변수로 fixture 경로 주입. fixture 생성은 결정적(seed 고정)
+- 언어/프레임워크: pytest(선택, 02§5) — 커버리지 기준 없음(1일 프로젝트), 핵심 평가 로직(연결/지표 계산/호환성 필터)만 최소 단위 테스트 권장
+- 디렉토리: `tests/`, `tests/fixtures/`
+- 테스트 명령: `pytest`(루트 또는 `tests/`). fixture 는 `sklearn.datasets`(예: iris 유사) 활용 또는 수동 작성(30§6)
+- 필수 시나리오: Given 모델 2개+데이터셋 1개 업로드 → When N:M 연결+지표 선택+Run → Then Run 1건·Evaluation N건 저장, 비호환 조합은 `status=skipped_incompatible`+WARNING 로그(10§6 MVP 성공 기준, 20§1 QS-7)

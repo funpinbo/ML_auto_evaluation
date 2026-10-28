@@ -30,11 +30,12 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 
 ## 팀 특화 지침
 - 운영 환경에 직접 변경을 가하지 않는다. 런북과 설정 코드로 남긴다.
-- 소유: `monitor/backend/app/logging_config.py`, `app/api/health.py`, `app/models/health.py`, `monitor/backend/tests/ops/`, `workspace/project/ops/`. `main.py` 의 라우터 등록·`setup_logging()` 호출은 backend 소유 — 필요하면 STM §5 `[backend]` 후보.
-- 로그: 콘솔 텍스트 `%(asctime)s %(levelname)s %(message)s`. ERROR = 패널을 못 그림, WARN = 파일 누락·형식 오류(파일 종류·건수만). 대화 본문·파일 경로·sessionId/requestId·토큰 금지. uvicorn access log 끔.
-- `/api/v1/health` = `{status, app: "aidlc-monitor", version, sources:{workspace, claude_projects, statusline, control}, usage_warming}`. 런처(cicd)가 중복 실행 판정에 쓰므로 `app` 값을 바꾸지 않는다.
-- infra 팀이 없다. 로컬 실행 환경 전제(127.0.0.1, 포트, Windows bash 필요 R-09)와 런북(포트 사용 중, statusLine 미실행, 일시정지 해제 안 됨, 데우기 느림)은 ops 몫.
-- 테스트 명령: `cd monitor/backend && python -m pytest tests/ops`, 전체 `cd monitor/backend && python -m pytest`.
+- 프로젝트: ML_miniops. 정식 SLO/SLI/알림은 없다(03§7 "메트릭/트레이스/알림 불필요", NFR-001 성능 목표 없음) — ops 의 실질 범위는 QS-2(가용성: 재시작 복구)와 02§7 로그 레벨 규칙 검증 2가지로 축소된다.
+- 소유: `workspace/project/ops/runbooks.md`. `app/**` 의 로깅 호출(`logging.info/warning/error`)은 backend 가 구현하고, ops 는 리뷰만 한다 — 직접 코드를 고치지 않고 STM §5 `[backend]` 후보로 남긴다.
+- 로그: 표준 `logging` 콘솔 출력만. ERROR=평가 실패(`status=error`), WARN=`status=skipped_incompatible`(선택적 지표 누락), INFO=Run/평가 시작·완료(02§7, 20§6). 메트릭/트레이스/알림 설정은 만들지 않는다.
+- QS-2 검증 절차: `python run.py` 로 서버를 띄우고 Model/Dataset/Run/Evaluation 을 생성 → 프로세스 강제 종료 → 재시작 → `GET` 조회로 데이터가 그대로 남아 있는지 확인(수동, SQLite 영속화만으로 충족).
+- infra 팀이 없다(40§2) — 로컬 실행 환경 전제(`127.0.0.1`, 포트 충돌 시 대응)도 ops 가 런북에 포함한다.
+- 테스트 명령: 수동 확인 위주(위 QS-2 절차). 자동화 pytest 가 있다면 `pytest`(선택).
 
 ## 반환
 호출자에게 짧게 보고: (작업) outcome, 변경 파일, 검증 결과, LTM 후보 / (리뷰) PASS·FAIL, 근거, 조치.

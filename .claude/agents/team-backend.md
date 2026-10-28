@@ -31,12 +31,12 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 ## 팀 특화 지침
 - 도메인 로직은 프레임워크에 의존하지 않게 분리한다.
 - 계약 변경이 필요하면 구현 전에 architecture Task 후보로 남긴다.
-- 스택: Python 3.11+, FastAPI 0.161.1, uvicorn 0.54.0(기본, `[standard]` 아님), Pydantic 2.14.1 — 그 밖은 표준 라이브러리만(ADR-006, watchfiles 금지 ADR-008). 계층 api → services → models 단방향.
-- 소유: `monitor/backend/app/**`(ops 의 logging_config.py·api/health.py·models/health.py 제외), `monitor/backend/scripts/`, `monitor/backend/tests/unit/`·`tests/api/`, `aidlc/scripts/loop_control.py` + `aidlc.py` 의 `loop-*` 등록 블록, `aidlc/hooks/statusline.{sh,py}`, `.claude/settings.json` 의 `statusLine` 키.
-- `memory_cascade.py` 는 import 해서 읽기 함수(`read_doc`, `Memory.phases/archived/latest_seq/pending/load_state`)만 허용 목록으로 호출. `aidlc.py status` 서브프로세스 금지(STM 아카이브 부작용), `check` 는 `sys.executable` 서브프로세스 허용(ADR-009).
-- API 를 바꾸면 같은 Task 안에서 `python monitor/backend/scripts/export_openapi.py` → `python3 aidlc/scripts/openapi_docs.py` 로 `docs/api/` 재생성. `openapi.json`·`docs/api/reference.md` 손편집 금지, architecture 리뷰 필수.
-- 테스트 명령: `cd monitor/backend && python -m pytest` (라인 ≥ 70%), `ruff format --check . && ruff check .`. qa 의 `tests/fixtures/` 를 쓰고 실제 `~/.claude` 는 쓰지 않는다. 경로는 `AIDLC_ROOT`·`CLAUDE_HOME` 로 주입.
-- 사용량 수집기·status line·Host/Origin 가드·`POST /control/*` 변경은 security 리뷰 대상. 소스 문제는 HTTP 200 + `meta.status`(NFR-002), 요청 오류만 `{"error":{code,message}}`.
+- 프로젝트: ML_miniops. 스택: Python 3.12 + FastAPI + Uvicorn(02§1, 20§7). 런타임 의존성은 FastAPI/Uvicorn/Pydantic + scikit-learn(지표 계산) + 표준 `sqlite3` 정도로 최소화 — PyTorch/scikit-learn 은 **사용자 업로드 스크립트 내부**에서만 쓰이고, 평가 엔진 자체는 프레임워크 분기 로직을 갖지 않는다(ADR-002, 20§0#1).
+- 소유: `app/api/`(라우터), `app/eval/model_loader.py`(`predict` 존재/호출 가능 여부 `hasattr` 검증, ADR-002, QS-6 fail fast), `app/eval/compatibility.py`(`METRIC_COMPATIBILITY` 매핑, ADR-003), `app/eval/engine.py`(Run 조합 순회 오케스트레이션), `app/eval/metrics.py`(accuracy/f1/rmse, scikit-learn.metrics), `app/eval/repository.py` 쿼리 함수 본문(DDL 은 dba 소유), `run.py`(`uvicorn.run(host="127.0.0.1")`), `workspace/data/`. `app/web/`·`app/eval/visualize.py` 는 frontend 소유 — 건드리지 않는다.
+- CSV 업로드는 "마지막 컬럼 = 라벨" 컨벤션(ADR-002§3, R6) — 열 수 ≥2 검증. 비호환 (model,metric) 조합은 Evaluation 레코드를 `status='skipped_incompatible'`, `value=NULL` 로 남기고 WARNING 로그(평가 자체를 누락시키지 않음 — KPI-02 집계 불일치 방지, 30§5.2).
+- 로깅: 표준 `logging`, 콘솔만. ERROR=`status=error`(평가 실패), WARN=`status=skipped_incompatible`, INFO=Run 시작/완료(02§7, 20§6). 로그에 PII 없음(NFR-005).
+- 테스트 명령: `pytest`(선택, 02§5) — qa 의 `tests/fixtures/` 더미 분류/회귀 CSV+모델 스크립트를 사용. `ruff format --check . && ruff check .`.
+- `127.0.0.1` 바인딩, 사람 승인 없는 외부 노출 설정 변경, 전역 Python 환경 설치, 사용자 업로드 데이터 삭제는 모두 금지(02§11) — security/ops 리뷰 대상.
 
 ## 반환
 호출자에게 짧게 보고: (작업) outcome, 변경 파일, 검증 결과, LTM 후보 / (리뷰) PASS·FAIL, 근거, 조치.

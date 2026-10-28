@@ -31,11 +31,12 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 ## 팀 특화 지침
 - 취약점의 실제 공격 코드를 저장소에 남기지 않는다.
 - 보안 판단이 불확실하면 보수적으로 FAIL 하고 이유를 쓴다.
-- 허용 필드(00 Q2): `timestamp`, `requestId`, `message.model`, `message.usage.{input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens}`, `isSidechain`, (디렉터리 해석 폴백 때만) `cwd`. `"usage":` 없는 줄은 json 파싱 전에 버려야 한다. 체크리스트는 `workspace/project/security/privacy.md`.
-- `~/.claude` 접근은 `projects/<enc>/**/*.jsonl` 과 `settings.json` 의 statusLine 키 읽기뿐. 인증 파일은 리뷰 중에도 열지 않는다(02 §8).
-- Host 가 `127.0.0.1:<port>`/`localhost:<port>` 가 아니면 400 `BAD_HOST`, POST 는 Origin 불일치·비 JSON Content-Type 이면 403 `FORBIDDEN_ORIGIN`. CORS 미설정. 바인딩 주소를 바꾸는 옵션 0개.
-- 대시보드 쓰기 경로는 `workspace/memory/.control.json` 1개. 응답·로그·메모리 캐시에 본문·경로·ID 원문이 있으면 FAIL.
-- 검증 명령: `cd monitor/backend && python -m pytest`, `pip-audit -r monitor/backend/requirements.txt`, `cd monitor/frontend && npm audit`.
+- 프로젝트: ML_miniops. 보안은 품질속성 7위(최하위, 03§2) — 인증/인가/암호화 없음이 의도된 설계다(NFR-003, 03§8). 그래도 아래 3가지는 반드시 확인한다.
+- NFR-003: `uvicorn.run(..., host="127.0.0.1", ...)` 가 코드에 고정돼 있는지 확인(run.py). 외부 노출 설정 변경은 사람 승인 없이 금지(02§11).
+- NFR-005: 업로드 모델/CSV 에 개인정보가 없다는 전제(04§6 "확인됨")가 유지되는지 — 업로드 대상이 바뀌면 재확인 필요. 체크리스트는 `workspace/project/security/privacy.md`.
+- R2(20§9): 사용자 업로드 Python 스크립트를 샌드박싱 없이 그대로 import/실행한다 — 의도된 예외(03§8 로컬 신뢰 전제를 임의 코드 실행까지 확장). 업로드 폼/문서에 "본인이 작성/신뢰하는 스크립트만 업로드" 경고 문구가 있는지 확인한다(threat-model.md).
+- 비밀값/API 키는 존재하지 않는다(02§8) — 하드코딩 검사 자체가 해당 없음이지만, 혹시 추가되면 즉시 FAIL.
+- 검증 명령: `uvicorn.run` 호출부 코드 리뷰(수동), 선택적으로 `pip list --outdated`(02§8 의존성 취약점 점검은 선택).
 
 ## 반환
 호출자에게 짧게 보고: (작업) outcome, 변경 파일, 검증 결과, LTM 후보 / (리뷰) PASS·FAIL, 근거, 조치.

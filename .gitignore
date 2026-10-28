@@ -2,6 +2,10 @@ __pycache__/
 *.pyc
 workspace/memory/.cascade-state.json
 
+# ML_miniops app(app/) 실행/테스트 전용 venv (T-030, requirements.txt 설치 대상) — 커밋하지 않음
+.venv/
+.pytest_cache/
+
 # AI-DLC Monitor runtime files (T-020, I-01) — 쓰기 주체: Monitor/Hook, 커밋하지 않음
 workspace/memory/.control.json
 workspace/memory/.monitor/

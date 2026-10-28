@@ -1,0 +1,16 @@
+{
+  "note": "실제 업로드 데이터 없음 — 합성 픽스처로 스키마/호환성 로직만 검증",
+  "schema_created": true,
+  "total_combinations_tested": 5,
+  "success_count": 3,
+  "skipped_incompatible_count": 2,
+  "metric_compatibility_map": {
+    "classification": [
+      "accuracy",
+      "f1"
+    ],
+    "regression": [
+      "rmse"
+    ]
+  }
+}

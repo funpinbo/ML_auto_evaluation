@@ -1,78 +1,80 @@
 ---
 doc: development-standards
 layer: user
-version: 0.1
+version: 0.2
 ---
 # 02. 개발 표준 정의서
 
 > **작성자: 사용자.** 모든 팀 Agent 가 코드를 쓸 때 이 문서를 "법"으로 따릅니다.
 > `{{ }}` = 필수. 팀 문서(`workspace/teams/*/charter.md`)는 이 문서를 팀 상황에 맞게 구체화만 하고, 어기지 못합니다.
 
+> 아래는 01 (로컬·1인·"하루" 목표, FastAPI 지정, 보안/성능 요구 없음)을 근거로 잡은 **경량 기본값**입니다.
+> 틀렸거나 다른 걸 쓰고 싶으면 직접 바꾸세요.
+
 ## 1. 언어 & 런타임
 | 영역 | 언어/버전 | 프레임워크 | 패키지 매니저 |
 |------|-----------|------------|---------------|
-| Backend | Python 3.11+ | FastAPI + uvicorn | pip + requirements.txt |
-| Frontend | TypeScript 5 | Vue 3 + Vite, 차트 ECharts | npm (프론트 수정 시에만 필요) |
-| Data | Python (표준 라이브러리) | - | - |
-| Infra | N/A (로컬 실행, 인프라 없음) | | |
+| Backend | Python 3.12 | FastAPI | pip + venv |
+| Frontend | HTML/JS (별도 프레임워크 없음) | FastAPI Jinja2 템플릿 + 바닐라 JS | N/A (Node 빌드 없음) |
+| Data | Python (pandas 등 모델 평가용) | | |
+| Infra | N/A (로컬 단일 프로세스, IaC 불필요) | | |
 
 ## 2. 코드 스타일
-- **Formatter / Linter:** Backend ruff format + ruff check / Frontend eslint + prettier
-- **네이밍 규칙:** Python 파일·함수 snake_case, 클래스 PascalCase / Vue 컴포넌트 PascalCase.vue, composable useXxx.ts
-- **타입:** Python type hint 필수, API 입출력은 Pydantic 모델 / TypeScript strict mode
-- **주석/문서화:** public 함수 docstring, 주석은 "왜"만
-- **최대 함수 길이 / 복잡도:** <!-- 선택 -->
+- **Formatter / Linter:** ruff format + ruff check
+- **네이밍 규칙:** PEP8 기본 — 파일/함수 snake_case, 클래스 PascalCase, 상수 UPPER_SNAKE
+- **타입:** type hint 권장 (strict mypy 는 1일 프로젝트 범위에는 과함 — 선택)
+- **주석/문서화:** 주석은 "왜"만, public 함수 docstring 은 선택
+- **최대 함수 길이 / 복잡도:** 기준 없음 (개인 프로젝트)
 
 ## 3. 디렉토리 구조 규칙
 ```
-monitor/
-  backend/app/     # FastAPI (api/ 라우터, services/ 파일 읽기·집계, models/ Pydantic)
-  backend/tests/
-  frontend/src/    # Vue (views/, components/panels/, api/)
-  frontend/dist/   # 빌드 결과 — 저장소에 포함 (사용자는 Node 불필요)
-run.py             # 원클릭 실행 (설치 + 서버 + 브라우저)
-run.bat / run.sh   # run.py 래퍼
+app/
+  api/        # FastAPI 라우터
+  eval/       # 모델 평가 로직 (모델/데이터 연결, 지표 계산)
+  web/        # 템플릿 · 정적 파일
+tests/        # 선택
 ```
 
 ## 4. Git 전략
-- **브랜치 전략:** 작업 브랜치 → main (PR)
-- **커밋 메시지:** Conventional Commits — feat:, fix:, docs:, chore:, test:
-- **PR 규칙:** 테스트 통과 필수, frontend 소스를 바꾸면 dist 재빌드 결과를 같은 PR 에 포함
-- **머지 방식:** squash
+- **브랜치 전략:** main 에 직접 커밋 (1인 프로젝트, trunk-based, PR 없음)
+- **커밋 메시지:** 자유 형식 (Conventional Commits 아님, 선택)
+- **PR 규칙:** N/A (리뷰어 없음)
+- **머지 방식:** N/A
 
 ## 5. 테스트 표준
-- **테스트 도구:** pytest (+ FastAPI TestClient), vitest
-- **커버리지 기준:** backend 라인 70% 이상
-- **필수 테스트 종류:** backend 단위 + API 테스트, 일시정지/재개 시나리오 테스트, 깨진 파일·빈 workspace 테스트
-- **테스트 데이터 규칙:** 실제 `~/.claude` 기록을 테스트에 쓰지 않는다. fixture 로 만든 가짜 기록만 사용
+- **테스트 도구:** pytest (선택)
+- **커버리지 기준:** 기준 없음 (1일 프로젝트)
+- **필수 테스트 종류:** 핵심 평가 로직(모델-데이터 연결, 지표 계산)만 최소 단위 테스트 권장, 선택
+- **테스트 데이터 규칙:** 실제 사용자 업로드 데이터 대신 더미 모델/데이터로 테스트
 
 ## 6. API 규칙
-- **스타일:** REST + OpenAPI (FastAPI 자동 생성 명세를 `workspace/project/contracts/openapi.json` 으로 내보냄), 실시간 갱신은 SSE
-- **버저닝:** `/api/v1` 경로
-- **에러 응답 포맷:** {"error": {"code": "STRING_CODE", "message": "사람이 읽는 메시지"}}
-- **인증/인가:** 없음 (127.0.0.1 바인딩으로 대체)
+- **스타일:** REST (OpenAPI 는 FastAPI 자동 생성 문서 사용)
+- **버저닝:** 없음 (단일 버전)
+- **에러 응답 포맷:** FastAPI 기본 `HTTPException` (`{"detail": "..."}`)
+- **인증/인가:** 없음 (NFR-003 — 로컬 전용, 외부 노출 없음)
 
 ## 7. 에러 처리 & 로깅
-- **로깅 포맷:** 콘솔 텍스트 로그 (시각, 레벨, 메시지)
-- **로그 레벨 기준:** ERROR=패널을 못 그림, WARN=파일 누락·형식 오류로 일부 생략
-- **금지:** Claude 대화 내용, 토큰/키를 로그에 출력하지 않는다
+- **로깅 포맷:** 기본 `logging` 모듈, 콘솔 출력
+- **로그 레벨 기준:** ERROR=평가 실패, WARN=선택적 지표 누락, INFO=평가 시작/완료
+- **금지:** 특별히 없음 (개인정보 미취급 가정 — 06 데이터 정의서에서 재확인)
 
 ## 8. 보안 코딩
-- **비밀값 관리:** 비밀값을 쓰지 않는다. `~/.claude` 의 인증 파일은 절대 읽지 않는다
-- **입력 검증:** 모든 API 입력은 Pydantic 으로 검증, 파일 경로를 요청에서 받지 않는다
-- **의존성 취약점 점검:** pip-audit, npm audit (릴리스 전 수동)
+- **비밀값 관리:** N/A (외부 API 키/비밀값 없음, 로컬 전용)
+- **입력 검증:** FastAPI/pydantic 기본 스키마 검증 사용
+- **의존성 취약점 점검:** 선택 (1일 프로젝트라 생략 가능)
 
 ## 9. 의존성 관리
-- **새 라이브러리 도입 기준:** 표준 라이브러리로 안 되는 경우만. MIT/Apache/BSD 라이선스, 최근 1년 내 릴리스. requirements.txt 는 버전 고정
+- **새 라이브러리 도입 기준:** 특별한 승인 절차 없음 — 필요한 것만 추가
 
 ## 10. Definition of Done (공통)
-- [ ] 테스트 작성 및 통과 (pytest / vitest)
-- [ ] ruff, eslint, 타입 검사 통과
-- [ ] frontend 변경 시 dist 재빌드 포함
+<!-- 모든 Task 가 "완료"로 인정되기 위한 최소 조건. STM outcome: done 의 기준이 됩니다. -->
+- [ ] 기능이 수동 확인(브라우저/API 호출)으로 동작함
+- [ ] lint(ruff) 통과 (선택)
 - [ ] 관련 문서 갱신
-- [ ] `run.bat` / `run.sh` 로 실행해 화면 확인
+- [ ] 핵심 평가 로직에 대한 단위 테스트가 있다면 통과
 
 ## 11. AI Agent 작업 규칙
-- **Agent 가 사람 승인 없이 하면 안 되는 일:** `~/.claude` 안의 파일 수정·삭제, 사용자 전역 설정(`~/.claude/settings.json`) 변경, 패키지 전역 설치
-- **변경 단위:** 한 Task = 한 커밋 묶음
+<!-- Agent 에게만 적용되는 추가 규칙 -->
+- **Agent 가 사람 승인 없이 하면 안 되는 일:** 외부 네트워크로 서비스 노출 설정 변경, 전역(시스템) Python 환경에 설치, 사용자 업로드 데이터 삭제
+- **변경 단위:** Task 단위로 자유롭게 (PR 단위 구분 없음)
 - **불확실할 때:** 추측하지 말고 STM 에 질문으로 남기고 blocked 처리

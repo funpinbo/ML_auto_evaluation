@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}업로드 - ML MiniOps{% endblock %}
+{% block content %}
+<!--
+  data-testid 네이밍 규칙 (frontend -> qa 합의, frontend charter §6):
+  "<화면>-<역할>[-<상태>]" 형태의 kebab-case. 예: model-upload-form, model-upload-submit,
+  model-upload-status(성공 메시지), model-upload-error(오류 메시지),
+  model-list / model-list-empty / model-list-loading / model-list-error / model-list-item.
+  dataset-* 는 동일 규칙의 대응 쌍(FR-002 두 업로드 폼이 대칭 구조이기 때문).
+-->
+<section aria-labelledby="upload-heading">
+  <h2 id="upload-heading">모델·데이터 업로드</h2>
+
+  <div class="warning-banner" role="alert" data-testid="r2-warning">
+    ⚠ 보안 경고: 본인이 작성/신뢰하는 스크립트만 업로드하세요. 업로드된 Python 모델 스크립트는
+    샌드박싱 없이 그대로 서버에서 실행됩니다.
+  </div>
+
+  <div class="columns">
+    <article aria-labelledby="model-upload-heading">
+      <h3 id="model-upload-heading">모델 업로드</h3>
+      <form id="model-upload-form" data-testid="model-upload-form" novalidate>
+        <div class="field">
+          <label for="model-file">모델 스크립트 파일 (.py, predict(X)-&gt;y 노출 필요)</label>
+          <input type="file" id="model-file" name="file" accept=".py" required
+                 data-testid="model-file-input">
+        </div>
+        <div class="field">
+          <label for="model-name">이름</label>
+          <input type="text" id="model-name" name="name" required data-testid="model-name-input">
+        </div>
+        <fieldset class="field">
+          <legend>프레임워크 (필수)</legend>
+          <label>
+            <input type="radio" name="framework" value="sklearn" required
+                   data-testid="model-framework-sklearn"> scikit-learn
+          </label>
+          <label>
+            <input type="radio" name="framework" value="pytorch"
+                   data-testid="model-framework-pytorch"> PyTorch
+          </label>
+        </fieldset>
+        <fieldset class="field">
+          <legend>문제 유형 (필수)</legend>
+          <label>
+            <input type="radio" name="problem_type" value="classification" required
+                   data-testid="model-problem-type-classification"> 분류 (classification)
+          </label>
+          <label>
+            <input type="radio" name="problem_type" value="regression"
+                   data-testid="model-problem-type-regression"> 회귀 (regression)
+          </label>
+        </fieldset>
+        <button type="submit" data-testid="model-upload-submit">업로드</button>
+        <p class="status" role="status" aria-live="polite" data-testid="model-upload-status" hidden></p>
+        <p class="error" role="alert" data-testid="model-upload-error" hidden></p>
+      </form>
+
+      <h4>업로드된 모델</h4>
+      <ul data-testid="model-list" aria-live="polite">
+        <li class="empty" data-testid="model-list-empty">아직 업로드된 모델이 없습니다.</li>
+      </ul>
+    </article>
+
+    <article aria-labelledby="dataset-upload-heading">
+      <h3 id="dataset-upload-heading">데이터 업로드</h3>
+      <form id="dataset-upload-form" data-testid="dataset-upload-form" novalidate>
+        <div class="field">
+          <label for="dataset-file">데이터 CSV 파일 (마지막 컬럼 = 라벨, 열 2개 이상)</label>
+          <input type="file" id="dataset-file" name="file" accept=".csv" required
+                 data-testid="dataset-file-input">
+        </div>
+        <div class="field">
+          <label for="dataset-name">이름</label>
+          <input type="text" id="dataset-name" name="name" required
+                 data-testid="dataset-name-input">
+        </div>
+        <button type="submit" data-testid="dataset-upload-submit">업로드</button>
+        <p class="status" role="status" aria-live="polite" data-testid="dataset-upload-status" hidden></p>
+        <p class="error" role="alert" data-testid="dataset-upload-error" hidden></p>
+      </form>
+
+      <h4>업로드된 데이터셋</h4>
+      <ul data-testid="dataset-list" aria-live="polite">
+        <li class="empty" data-testid="dataset-list-empty">아직 업로드된 데이터셋이 없습니다.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='upload.js') }}"></script>
+{% endblock %}

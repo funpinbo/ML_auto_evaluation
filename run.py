@@ -156,6 +156,9 @@ def _pip_env() -> dict[str, str]:
     env = dict(os.environ)
     env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
     env["PIP_NO_INPUT"] = "1"
+    # requirements.txt 의 한글 주석에 BOM/인코딩 선언이 없어, 로케일이 cp949 인 Windows 에서
+    # pip 가 시스템 로케일로 디코딩을 시도해 UnicodeDecodeError 가 난다. UTF-8 모드를 강제한다.
+    env["PYTHONUTF8"] = "1"
     env.pop("PIP_USER", None)  # venv 밖(사용자 site)으로 설치되지 않게
     env.pop("PYTHONHOME", None)
     return env

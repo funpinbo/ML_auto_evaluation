@@ -29,13 +29,13 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 - 실행하지 않은 검증을 통과했다고 쓰지 않는다.
 
 ## 팀 특화 지침
-- prod 배포 자동 실행 단계는 반드시 수동 승인 게이트를 둔다.
+- prod 배포 자동 실행 단계는 반드시 수동 승인 게이트를 둔다(이 프로젝트는 dev/prod 구분이 없어 해당 없음 — 03§6).
 - CI 를 통과시키려고 검사를 끄지 않는다.
-- 원격 CI/CD 는 범위 밖(01 §3) — `.github/workflows/`·Dockerfile 을 만들지 않는다. 대신 로컬 게이트 `monitor/tools/check.py` 와 `check_dist_fresh.py` 를 소유한다.
-- 소유: `run.py`, `run.bat`, `run.sh`, `monitor/backend/requirements*.txt`, `monitor/backend/pyproject.toml`, `monitor/frontend/package.json`·`package-lock.json`, `.gitignore`(프레임워크 줄 유지, Monitor 항목만 추가), `workspace/project/release/`.
-- run.py 는 표준 라이브러리만. Python 3.11+ 탐지(run.sh 는 python3/python/py 를 실제 실행해 확인, run.bat 는 `py -3` → `python`, Store 별칭 배제), `monitor/.venv`, requirements 해시 마커, 포트 8765(사용 중이면 `/api/v1/health` 의 `app: "aidlc-monitor"` 확인), uvicorn `--host 127.0.0.1` 하드코딩.
-- requirements 는 전이 의존성까지 `==` 고정. 런타임 직접 의존성은 fastapi·uvicorn(기본)·pydantic 3개뿐(ADR-006). 패키지 전역 설치 금지(02 §11).
-- 게이트 명령: ruff format --check, ruff check, `cd monitor/backend && python -m pytest --cov`, dist 신선도, `cd monitor/frontend && npm run lint && npx vue-tsc --noEmit && npm test`, `npm run build`, OpenAPI export diff 없음. 릴리스 전 pip-audit·npm audit.
+- 프로젝트: ML_miniops. 원격 CI/CD 는 범위 밖(02§4 "main 직접 커밋, PR 없음", 03§6 "배포 전략 불필요") — `.github/workflows/`·Dockerfile 을 만들지 않는다. cicd 는 02§10 공통 DoD 를 집행하는 **로컬 게이트 체크리스트**로 축소 운영한다.
+- 소유: `requirements.txt`(의존성 버전, 02§9 "특별한 승인 절차 없음 — 필요한 것만 추가"), `.gitignore`, 본 charter(`workspace/teams/cicd/charter.md`) §7 의 DoD 체크리스트.
+- `run.py` 는 backend 소유(uvicorn 구동, 호스트 `127.0.0.1` 고정, 20§4) — cicd 는 실행 스크립트 자체를 소유하지 않는다.
+- 게이트 명령(Task 완료 전 수동 실행): `ruff format --check . && ruff check .`, `pytest`(있으면). 패키지는 전역 Python 환경에 설치하지 않는다(pip+venv, 02§11 "사람 승인 필요" 금지 행위).
+- 릴리스/버전 정책: 없음(02§6 "버저닝 없음, 단일 버전") — 변경 로그는 자유 형식 커밋 메시지로 추적한다(02§4).
 
 ## 반환
 호출자에게 짧게 보고: (작업) outcome, 변경 파일, 검증 결과, LTM 후보 / (리뷰) PASS·FAIL, 근거, 조치.
